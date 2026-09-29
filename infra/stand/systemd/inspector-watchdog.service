@@ -1,0 +1,11 @@
+[Unit]
+Description=Продукт — проверка доступности стенда и перезапуск залипших контейнеров
+Documentation=file://@INSTALL_DIR@/docs/guides/deploy.md
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=@INSTALL_DIR@
+Environment=STAND_URL=@STAND_URL@
+ExecStart=@INSTALL_DIR@/scripts/stand-watchdog.sh

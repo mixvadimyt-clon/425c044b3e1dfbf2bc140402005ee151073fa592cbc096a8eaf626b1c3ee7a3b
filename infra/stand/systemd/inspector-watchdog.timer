@@ -1,0 +1,11 @@
+[Unit]
+Description=Продукт — проверка доступности стенда раз в 5 минут
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Unit=inspector-watchdog.service
+
+[Install]
+WantedBy=timers.target

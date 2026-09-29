@@ -1,0 +1,33 @@
+{
+  "rabbit_version": "4.0.0",
+  "users": [
+    {
+      "name": "inspector",
+      "password_hash": "nhQNnqBm9fB6rOeIiKlR6EWnhxFmCAa2SfivSyH85JDyw2yE",
+      "hashing_algorithm": "rabbit_password_hashing_sha256",
+      "tags": ["administrator"]
+    }
+  ],
+  "vhosts": [{ "name": "/" }],
+  "permissions": [
+    { "user": "inspector", "vhost": "/", "configure": ".*", "write": ".*", "read": ".*" }
+  ],
+  "exchanges": [
+    { "name": "inspector", "vhost": "/", "type": "topic", "durable": true, "auto_delete": false, "internal": false, "arguments": {} },
+    { "name": "inspector.dlx", "vhost": "/", "type": "topic", "durable": true, "auto_delete": false, "internal": false, "arguments": {} }
+  ],
+  "queues": [
+    { "name": "ml.parse", "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-queue-type": "classic", "x-dead-letter-exchange": "inspector.dlx" } },
+    { "name": "ml.compare", "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-queue-type": "classic", "x-dead-letter-exchange": "inspector.dlx" } },
+    { "name": "api.parse-result", "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-queue-type": "classic", "x-dead-letter-exchange": "inspector.dlx" } },
+    { "name": "api.compare-result", "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-queue-type": "classic", "x-dead-letter-exchange": "inspector.dlx" } },
+    { "name": "inspector.dead-letter", "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-queue-type": "classic" } }
+  ],
+  "bindings": [
+    { "source": "inspector", "vhost": "/", "destination": "ml.parse", "destination_type": "queue", "routing_key": "ml.parse.request", "arguments": {} },
+    { "source": "inspector", "vhost": "/", "destination": "ml.compare", "destination_type": "queue", "routing_key": "ml.compare.request", "arguments": {} },
+    { "source": "inspector", "vhost": "/", "destination": "api.parse-result", "destination_type": "queue", "routing_key": "ml.parse.result", "arguments": {} },
+    { "source": "inspector", "vhost": "/", "destination": "api.compare-result", "destination_type": "queue", "routing_key": "ml.compare.result", "arguments": {} },
+    { "source": "inspector.dlx", "vhost": "/", "destination": "inspector.dead-letter", "destination_type": "queue", "routing_key": "#", "arguments": {} }
+  ]
+}

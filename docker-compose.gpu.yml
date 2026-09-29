@@ -1,0 +1,28 @@
+# Надстройка для GPU (стенд проверки: H100 80 ГБ): ML-образ с CUDA
+# и paddlepaddle-gpu, распознавание без бюджета страниц.
+#   ./start.sh --gpu
+#   docker compose -f docker-compose.app.yml -f docker-compose.gpu.yml --env-file .env.stand up -d --build
+# Нужен NVIDIA Container Toolkit на хосте: драйвер в образ не кладём, CUDA внутри (ADR-0007).
+services:
+  ml:
+    build: { context: ., dockerfile: infra/docker/ml-gpu.Dockerfile, args: { EXTRAS: "${ML_EXTRAS:-ocr embeddings}" } }
+    image: inspector-ml-gpu
+    environment:
+      OCR_DEVICE: ${OCR_DEVICE:-auto}
+      # На GPU страница распознаётся около секунды — потолок страниц здесь только портит качество
+      OCR_MAX_PAGES: ${OCR_MAX_PAGES:-0}
+      ML_WORKERS: ${ML_WORKERS:-4}
+      # Организаторы допускают проверку нескольких команд на одном GPU, поэтому
+      # берём не «сколько есть», а фиксированный предел. Распознаванию столько не нужно и близко:
+      # замер на живой карте — пик 69 МБ под тензоры, работает даже при пределе 512 МБ.
+      # 20 ГБ здесь — бюджет под языковую модель; окончательное значение за ней, когда выберет
+      # модель и квантизацию. 0 — без предела, для монопольной карты.
+      FLAGS_allocator_strategy: auto_growth
+      FLAGS_gpu_memory_limit_mb: ${GPU_MEMORY_LIMIT_MB:-20480}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

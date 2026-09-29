@@ -1,0 +1,941 @@
+/* Режим «Сравнение листов»: наложение страниц, области различий и гипотезы */
+/* Слева листы во всю высоту, справа пояснение и гипотезы; на узком центре блоки идут друг под другом */
+.cmp-container {
+  height: 100%;
+  min-height: 0;
+  container-type: inline-size;
+}
+
+.cmp-root {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 12px 12px;
+}
+
+.cmp-main {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cmp-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.cmp-pair-select {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.cmp-pair-select .ant-select-selection-item {
+  font-size: 13px;
+}
+
+/* Разбор для дообучения: пара листов зафиксирована на записи, вместо выпадающего списка — подпись */
+.cmp-pair-label-static {
+  display: inline-flex;
+  align-items: center;
+  font-size: 13px;
+  padding: 4px 0;
+}
+
+/* Плашка стадии: те же цвета, что в панелях (ПД синий, РД коричневый, ИД фиолетовый) */
+.cmp-stage {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.3;
+  color: #FFFFFF;
+  vertical-align: baseline;
+}
+
+.cmp-arrow {
+  color: #667085;
+  padding: 0 2px;
+}
+
+.cmp-pair-score {
+  color: #667085;
+}
+
+/* Переключатель режима: выбранная кнопка зелёная, как и раньше */
+.cmp-seg {
+  display: inline-flex;
+  height: 32px;
+  border: 1px solid #CBD3DE;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.cmp-seg button {
+  border: 0;
+  background: transparent;
+  padding: 0 14px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.cmp-seg button.is-on {
+  background: #12988C;
+  color: #FFFFFF;
+}
+
+.cmp-seg button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Ползунок с подписью под ним */
+.cmp-opacity {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12.5px;
+}
+
+.cmp-opacity-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.cmp-opacity input {
+  flex: 0 1 220px;
+  min-width: 80px;
+  accent-color: #12988C;
+}
+
+.cmp-score {
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.cmp-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 12px;
+  color: #475467;
+}
+
+.cmp-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cmp-legend i {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.cmp-warn {
+  color: #B54708;
+  font-weight: 600;
+}
+
+.cmp-warn,
+.cmp-hint {
+  font-size: 12.5px;
+}
+
+.cmp-hint {
+  color: #12988C;
+  font-weight: 600;
+}
+
+.cmp-viewer {
+  flex: 0 0 auto;
+  height: clamp(280px, 52vh, 620px);
+  min-height: 0;
+  border: 1px solid #E3E8EF;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #EEF1F5;
+  display: flex;
+}
+
+.cmp-host {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cmp-frame {
+  position: relative;
+  overflow: hidden;
+  background: #FFFFFF;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.18);
+}
+
+.cmp-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  background: #FFFFFF;
+}
+
+.cmp-canvas-right {
+  inset: auto;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  mix-blend-mode: multiply;
+  background: transparent;
+  pointer-events: none;
+}
+
+.cmp-note {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #667085;
+  background: rgba(255, 255, 255, 0.7);
+  pointer-events: none;
+}
+
+.cmp-note-error {
+  color: #991B1B;
+}
+
+.cmp-side {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 8px;
+  min-width: 0;
+}
+
+.cmp-side-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.cmp-side-title {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #344054;
+  padding: 0 2px 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cmp-side-page {
+  flex: 1;
+  min-height: 0;
+}
+
+.cmp-empty {
+  padding: 24px;
+  text-align: center;
+  color: #667085;
+}
+
+.cmp-empty-error {
+  color: #991B1B;
+}
+
+/* Гипотезы */
+.cmp-sus-title {
+  font-weight: 700;
+  font-size: 13.5px;
+}
+
+.cmp-sus-note {
+  color: #667085;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.sus-list {
+  display: grid;
+  gap: 8px;
+}
+
+.sus-empty {
+  color: #667085;
+  font-size: 12.5px;
+  padding: 8px 0;
+}
+
+.sus-card {
+  border: 1px solid #E3E8EF;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #FFFFFF;
+  font-size: 12.5px;
+}
+
+.sus-card.is-selected {
+  border-color: #F79009;
+  box-shadow: 0 0 0 2px rgba(247, 144, 9, 0.25);
+}
+
+.sus-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  margin-bottom: 6px;
+}
+
+.sus-chip,
+.sus-status {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #F2F4F7;
+  color: #475467;
+}
+
+.sus-status-wait {
+  background: #FEF0C7;
+  color: #93370D;
+}
+
+.sus-status-done {
+  background: #F2F4F7;
+  color: #475467;
+}
+
+.sus-status-clarify {
+  background: #DCE6FD;
+  color: #1E3A8A;
+}
+
+.sus-status-promoted {
+  background: #D1FAE5;
+  color: #065F46;
+}
+
+.sus-desc {
+  line-height: 1.5;
+  margin-bottom: 4px;
+}
+
+.sus-refs {
+  color: #667085;
+  font-size: 11.5px;
+  margin-bottom: 6px;
+}
+
+.sus-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.sus-decide {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.sus-form {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid #12988C;
+  border-radius: 8px;
+  background: #F0FDFA;
+  cursor: default;
+}
+
+.sus-form-title {
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.sus-form-hint {
+  color: #667085;
+  font-size: 11.5px;
+  line-height: 1.4;
+  margin-bottom: 6px;
+}
+
+.sus-label {
+  display: block;
+  margin: 8px 0 4px;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.sus-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.sus-frags {
+  display: grid;
+  gap: 4px;
+}
+
+.sus-frag {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border: 1px solid #E3E8EF;
+  border-radius: 6px;
+  background: #FFFFFF;
+}
+
+.sus-frag.is-removed {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+
+.sus-frag.is-new {
+  border-color: #12988C;
+}
+
+.sus-frag-main {
+  flex: 1 1 120px;
+  min-width: 0;
+}
+
+.sus-missing {
+  margin-top: 6px;
+  color: #B54708;
+  font-size: 12px;
+}
+
+body[data-theme='dark'] .cmp-seg {
+  border-color: #4A4F57;
+}
+
+body[data-theme='dark'] .cmp-legend,
+body[data-theme='dark'] .cmp-sus-note,
+body[data-theme='dark'] .sus-refs,
+body[data-theme='dark'] .sus-form-hint,
+body[data-theme='dark'] .cmp-empty,
+body[data-theme='dark'] .sus-empty {
+  color: #B9BEC5;
+}
+
+body[data-theme='dark'] .cmp-viewer {
+  border-color: #4A4F57;
+  background: #26292E;
+}
+
+body[data-theme='dark'] .cmp-side-title {
+  color: #E4E6E9;
+}
+
+body[data-theme='dark'] .sus-card {
+  background: #1D1F23;
+  border-color: #4A4F57;
+}
+
+body[data-theme='dark'] .sus-chip,
+body[data-theme='dark'] .sus-status-done {
+  background: #33373D;
+  color: #E4E6E9;
+}
+
+body[data-theme='dark'] .sus-status-wait {
+  background: rgba(247, 144, 9, 0.2);
+  color: #FEC84B;
+}
+
+body[data-theme='dark'] .sus-status-clarify {
+  background: rgba(96, 165, 250, 0.2);
+  color: #BFDBFE;
+}
+
+body[data-theme='dark'] .sus-status-promoted {
+  background: rgba(22, 163, 74, 0.2);
+  color: #86EFAC;
+}
+
+body[data-theme='dark'] .sus-form {
+  background: #26292E;
+  border-color: #4FD1C5;
+}
+
+body[data-theme='dark'] .sus-frag {
+  background: #1D1F23;
+  border-color: #4A4F57;
+}
+
+body[data-theme='dark'] .cmp-note {
+  background: rgba(29, 31, 35, 0.7);
+  color: #B9BEC5;
+}
+
+/* Переключатель режима центра в панели с кнопками: той же высоты, что «Во весь экран» и «Панели синхронны» (40 px) */
+.compare-actions .cmp-seg,
+.fs-toolbar-row .cmp-seg {
+  height: 32px;
+  flex: 0 0 auto;
+}
+
+.compare-actions .cmp-seg button,
+.fs-toolbar-row .cmp-seg button {
+  flex: 0 0 auto;
+  height: 100%;
+  padding: 0 12px;
+  font-size: 12.5px;
+}
+
+body[data-theme='dark'] .cmp-seg button:not(.is-on) {
+  color: #E4E6E9;
+}
+
+/* Кнопки решений по гипотезе: те же цвета, что «Подтвердить / Отклонить / Уточнить» у несоответствий */
+.sus-btn {
+  width: auto;
+  flex: 1 1 auto;
+  height: 34px;
+  padding: 0 12px;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+/* Обычный (свёрнутый) режим: шапка с управлением, лист по центру, гипотезы в правой колонке на месте решения инспектора */
+.cmp-root.cmp-slots {
+  padding: 8px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.cmp-root.cmp-slots .cmp-main {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.cmp-root.cmp-slots .cmp-viewer {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 280px;
+}
+
+.cmp-header-slot {
+  flex: 1 1 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cmp-hint-mode {
+  flex: 1 1 100%;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: #475467;
+}
+
+body[data-theme='dark'] .cmp-hint-mode {
+  color: #C6CACF;
+}
+
+.cmp-opacity-value {
+  min-width: 40px;
+  text-align: right;
+}
+
+.cmp-how {
+  color: #475467;
+  line-height: 1.4;
+  font-size: 12px;
+}
+
+body[data-theme='dark'] .cmp-how {
+  color: #C6CACF;
+}
+
+body[data-theme='dark'] .cmp-arrow,
+body[data-theme='dark'] .cmp-pair-score {
+  color: #A9AEB5;
+}
+
+body[data-theme='dark'] .cmp-hint {
+  color: #C6CACF;
+}
+
+/* Масштаб листов: колесо, кнопки, перетаскивание */
+.cmp-zoom {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.cmp-zoom-area {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.cmp-zoom-inner {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  transform-origin: center;
+}
+
+.cmp-zoom-tools {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-top: 1px solid #E3E8EF;
+  background: #FFFFFF;
+  font-size: 12px;
+}
+
+.cmp-zoom-value {
+  min-width: 42px;
+  text-align: center;
+}
+
+body[data-theme='dark'] .cmp-zoom-tools {
+  background: #1D1F23;
+  border-top-color: #4A4F57;
+}
+
+/* Левая колонка сравнения листов: управление листами и список гипотез */
+.cmp-left {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.cmp-controls-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cmp-controls-box .cmp-pair-select {
+  flex: 0 0 auto;
+  width: 100%;
+}
+
+.cmp-opacity-row input {
+  flex: 1 1 auto;
+  min-width: 80px;
+  accent-color: #12988C;
+}
+
+/* Список гипотез: фильтр, поиск, переход, компактные карточки */
+.sus-listwrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sus-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sus-filters .vw-tab {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.sus-nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  color: #667085;
+}
+
+.sus-nav-pos {
+  font-weight: 700;
+}
+
+.sus-listwrap .sus-list {
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.sus-item {
+  border: 1px solid #E3E8EF;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #FFFFFF;
+  cursor: pointer;
+  font-size: 12.5px;
+}
+
+.sus-item:hover {
+  border-color: #12988C;
+}
+
+.sus-item.is-selected {
+  border-color: #0E7C72;
+  background: #E1F3F0;
+  box-shadow: 0 0 0 1px #0E7C72;
+}
+
+.sus-item-desc {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.4;
+}
+
+.sus-card {
+  cursor: default;
+}
+
+body[data-theme='dark'] .sus-item {
+  background: #131416;
+  border-color: #33373D;
+}
+
+body[data-theme='dark'] .sus-item.is-selected {
+  background: #0E4D45;
+  border-color: #0E7C72;
+}
+
+body[data-theme='dark'] .sus-nav {
+  color: #B9BEC5;
+}
+
+/* Содержимое плавающих панелей «Показать гипотезы» и «Показать решение» */
+.cmp-float-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Уведомления в шапке */
+/* Кнопка колокольчика: углы того же радиуса, что у кнопок проверки */
+.notif-btn.ant-btn {
+  border-radius: 8px;
+}
+
+.notif-popover .ant-popover-inner {
+  padding: 0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.notif-list {
+  width: 360px;
+  max-width: 90vw;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.notif-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid #E3E8EF;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #FFFFFF;
+}
+
+body[data-theme='dark'] .notif-head {
+  background: #26292E;
+}
+
+.notif-item {
+  padding: 10px 14px;
+  border-bottom: 1px solid #EFF2F6;
+  font-size: 12.5px;
+}
+
+.notif-item.is-unread {
+  border-left: 3px solid #12988C;
+  padding-left: 11px;
+}
+
+.notif-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-weight: 700;
+}
+
+.notif-time {
+  color: #667085;
+  font-weight: 400;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.notif-text {
+  margin: 4px 0 6px;
+  line-height: 1.45;
+}
+
+.notif-project {
+  margin-top: 2px;
+  font-weight: 600;
+  color: #12988C;
+}
+
+.notif-count {
+  color: #667085;
+  font-weight: 400;
+}
+
+.notif-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.notif-empty {
+  padding: 16px 14px;
+  color: #667085;
+}
+
+body[data-theme='dark'] .notif-head,
+body[data-theme='dark'] .notif-item {
+  border-color: #33373D;
+}
+
+body[data-theme='dark'] .notif-time,
+body[data-theme='dark'] .notif-empty {
+  color: #B9BEC5;
+}
+
+/* Строки управления листами: выбор пары, «Наложение / Рядом», переключатель режима и «Во весь экран» стоят рядом */
+.cmp-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.cmp-row-tight {
+  gap: 4px 14px;
+}
+
+.cmp-row .cmp-pair-select {
+  flex: 1 1 120px;
+  min-width: 110px;
+  width: auto;
+}
+
+.cmp-row .fullscreen-toggle-btn {
+  flex: 0 0 auto;
+  width: auto;
+  padding: 0 14px;
+}
+
+.cmp-controls-box.is-inline {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.cmp-controls-box.is-inline .cmp-opacity-row {
+  flex: 1 1 260px;
+}
+
+/* Панели ПД / РД / ИД гипотезы */
+.hyp-docs {
+  display: grid;
+  gap: 1px;
+  height: 100%;
+  min-height: 0;
+  background: #E3E8EF;
+}
+
+body[data-theme='dark'] .hyp-docs {
+  background: #33373D;
+}
+
+.hyp-docs .doc-panel {
+  min-height: 0;
+}
+
+.hyp-doc-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  background: #EEF1F5;
+}
+
+body[data-theme='dark'] .hyp-doc-body {
+  background: #26292E;
+}
+
+.vw-col-evidence-scroll .sus-empty {
+  padding: 8px 0;
+}
+
+/* Кнопки режима по центру строки; выбор пары — на своей строке во всю ширину */
+.cmp-row {
+  justify-content: center;
+}
+
+.cmp-row .cmp-pair-select,
+.cmp-controls-box .cmp-pair-select {
+  flex: 0 0 auto;
+  width: 100%;
+  min-width: 0;
+}
+
+/* Полный экран: выбор пары тянется, «Наложение / Рядом» — сразу за ним */
+.cmp-row.cmp-row-fs {
+  flex-wrap: nowrap;
+}
+
+.cmp-row.cmp-row-fs .cmp-pair-select {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
+
+.cmp-row.cmp-row-fs > .cmp-seg {
+  flex: 0 0 auto;
+}

@@ -1,0 +1,185 @@
+# «Продукт» — приложение для сдачи и стенда (ADR-0007): api, ml (CPU), web (Caddy + HTTPS), rin-mock.
+# Локальная конфигурация без обязательной инфраструктуры: SQLite и файлы в томе data, api ⇄ ml по HTTP.
+#   cp infra/stand/stand.env.example .env.stand      # задать секреты и адрес (файл .env.* не попадает в git)
+#   docker compose -f docker-compose.app.yml --env-file .env.stand up -d --build
+#   ./scripts/stand-smoke.sh http://localhost inspector "$DEMO_PASSWORD"   # проверка сквозного сценария
+# GPU (железо организаторов): добавить -f docker-compose.gpu.yml. Мониторинг: --profile monitoring.
+# Подробно — docs/guides/deploy.md.
+name: inspector
+
+x-restart: &restart
+  restart: unless-stopped
+  # Ротация логов: стенд работает до середины октября без правок (заморозка после 29.09), а Caddy и api
+  # пишут в лог каждый запрос. Без предела json-file растёт, пока не займёт диск (50 ГБ).
+  logging:
+    driver: json-file
+    options: { max-size: "50m", max-file: "3" }
+
+services:
+  api:
+    <<: *restart
+    build: { context: ., dockerfile: services/api/Dockerfile }
+    image: inspector-api
+    environment:
+      API_PUBLIC_URL: http://api:3000          # адрес для callback от ml внутри сети compose
+      JWT_SECRET: ${JWT_SECRET:?задайте JWT_SECRET в .env.stand}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:?задайте INTERNAL_TOKEN в .env.stand}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-}
+      # вход без пароля под любой учётной записью — только на время экспертизы (29.09, просьба организаторов)
+      OPEN_ACCESS: ${OPEN_ACCESS:-false}
+      ML_TRANSPORT: http
+      ML_URL: http://ml:8000
+      ML_JOB_TIMEOUT_S: ${ML_JOB_TIMEOUT_S:-1800}
+      MATRIX_ACTIVE_PARAMS: ${MATRIX_ACTIVE_PARAMS:-all}    # вся матрица, 132 параметра
+      RIN_URL: ${RIN_URL-http://rin-mock:4020}
+      RIN_TOKEN: ${RIN_TOKEN:-dev-rin-token}
+      RIN_SECRET: ${RIN_SECRET:-dev-rin-secret}
+      RIN_SYSTEM_NAME: ${RIN_SYSTEM_NAME:-ИАИС «РиН»}
+      RIN_POLL_INTERVAL_S: ${RIN_POLL_INTERVAL_S:-60}
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # api открыт только через Caddy: адрес клиента — тот, что Caddy дописал в X-Forwarded-For.
+      # Нужен ограничению попыток входа, иначе все клиенты для api — один адрес Caddy.
+      TRUST_PROXY: ${TRUST_PROXY:-1}
+      LOGIN_MAX_FAILURES: ${LOGIN_MAX_FAILURES:-5}
+      LOGIN_MAX_FAILURES_PER_IP: ${LOGIN_MAX_FAILURES_PER_IP:-20}
+      LOGIN_WINDOW_S: ${LOGIN_WINDOW_S:-900}
+      # MLflow — витрина ML-контура; сервис в профиле mlops. Не запущен — api работает как
+      # раньше, а сессия для вкладки в админке отвечает 503 с подсказкой, как включить.
+      MLFLOW_URL: ${MLFLOW_URL-http://mlflow:5000/mlflow}
+      # Журнал действий пользователей: в базе он есть всегда, здесь — копия строками JSON
+      # рядом с данными. Вебхук и Telegram по умолчанию выключены: наружу из закрытого
+      # контура ничего не уходит, пока это не включат осознанно.
+      AUDIT_FILE: ${AUDIT_FILE:-/data/audit.jsonl}
+      AUDIT_WEBHOOK_URL: ${AUDIT_WEBHOOK_URL:-}
+      AUDIT_TELEGRAM_TOKEN: ${AUDIT_TELEGRAM_TOKEN:-}
+      AUDIT_TELEGRAM_CHAT: ${AUDIT_TELEGRAM_CHAT:-}
+    extra_hosts:
+      # Из Yandex Cloud часть адресов api.telegram.org не отвечает: 28.09 DNS отдавал 149.154.166.110
+      # (таймаут), а отвечал 149.154.167.220. Закрепляем имя за рабочим адресом; перестанет
+      # отвечать — AUDIT_TELEGRAM_IP в .env. Пока Telegram выключен, запись ни на что не влияет.
+      - "api.telegram.org:${AUDIT_TELEGRAM_IP:-149.154.167.220}"
+    volumes:
+      - data:/data
+      - ${IMPORT_DIR:-./dataset}:/import:ro     # серверный импорт комплектов (POST /documents/import)
+    depends_on:
+      ml: { condition: service_healthy }
+
+  ml:
+    <<: *restart
+    build: { context: ., dockerfile: infra/docker/ml.Dockerfile, args: { EXTRAS: "${ML_EXTRAS:-ocr embeddings}" } }
+    image: inspector-ml
+    environment:
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:?задайте INTERNAL_TOKEN в .env.stand}
+      API_URL: http://api:3000
+      OCR_DEVICE: ${OCR_DEVICE:-cpu}
+      # на CPU распознавание — около минуты на страницу: бюджет на документ (0 — без ограничения)
+      OCR_MAX_PAGES: ${OCR_MAX_PAGES:-30}
+      ML_WORKERS: ${ML_WORKERS:-2}
+      # Предел одной задачи — тот же, что у api. Без этой строки ML брал своё умолчание 600 с, и на
+      # стенде с одним ядром сравнение 145 документов (Новослободская) снималось по таймауту и
+      # повторялось по кругу (27.09): api ждал 1800 с, а ML сдавался через 10 минут.
+      ML_JOB_TIMEOUT_S: ${ML_JOB_TIMEOUT_S:-1800}
+      # Sentence-BERT — запасной путь извлечения числовых параметров. Выключен по умолчанию:
+      # каждый процесс ML с ним держит torch и модель, около 1 ГБ памяти (на ВМ с 8 ГБ — ML_WORKERS=1).
+      SBERT_ENABLED: ${SBERT_ENABLED:-false}
+      # Основной лимит — число подписей на задачу (детерминированный: пересчёт даёт те же значения);
+      # бюджет по часам — только аварийный, чтобы не съесть ML_JOB_TIMEOUT_S
+      SBERT_MAX_LABELS: ${SBERT_MAX_LABELS:-30000}
+      SBERT_BUDGET_S: ${SBERT_BUDGET_S:-1800}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Замеры ML в MLflow: `docker compose exec ml inspector-ml eval coverage --mlflow` пишет
+      # прогон в эксперимент inspector-evals. Профиль mlops не запущен — замер работает, запись пропускается.
+      MLFLOW_URL: ${MLFLOW_URL-http://mlflow:5000/mlflow}
+      # Учётка ML-инженера для `inspector-ml train`: выгрузка GOLD-набора и регистрация модели.
+      # Демо-пользователь `ml`, пароль по умолчанию — DEMO_PASSWORD стенда.
+      ML_API_LOGIN: ${ML_API_LOGIN:-ml}
+      ML_API_PASSWORD: ${ML_API_PASSWORD:-${DEMO_PASSWORD:-}}
+    # Потолок процессора, ядер (0 — без потолка). PaddleOCR на процессоре берёт все ядра на
+    # каждого воркера: на 4-ядерной машине разбор одного скана держал 400 %, и api с интерфейсом
+    # вставали вместе с ним. ./start.sh в варианте cpu отдаёт ML половину ядер.
+    cpus: ${ML_CPUS:-0}
+    volumes:
+      - data:/data                              # общий с api: raw/{sha256} и кеш разбора parsed/
+
+  web:
+    <<: *restart
+    build: { context: ., dockerfile: infra/docker/web.Dockerfile }
+    image: inspector-web
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}        # доменное имя — Caddy сам получит сертификат Let's Encrypt
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      api: { condition: service_healthy }
+
+  rin-mock:
+    <<: *restart
+    build: services/rin-mock
+    image: inspector-rin-mock
+    environment:
+      RIN_TOKEN: ${RIN_TOKEN:-dev-rin-token}
+      RIN_SECRET: ${RIN_SECRET:-dev-rin-secret}
+      RIN_SYSTEM_NAME: ${RIN_SYSTEM_NAME:-ИАИС «РиН»}
+    volumes:
+      - rin:/data                               # packages/ — пакеты документов, results/ — принятые результаты
+      - ${IMPORT_DIR:-./dataset}:/import:ro     # источник для npm run package
+
+  # ------------------------------------------------ profile: mlops
+  # MLflow: версии GOLD-набора и модели с метриками §14 — их пишет api, источник истины остаётся
+  # в api. Открывается из админки по /mlflow/ (Caddy пускает по сессии, которую выдаёт api).
+  # Включить: ./start.sh --mlflow (пишет COMPOSE_PROFILES=mlops в .env.stand). ~350 МБ памяти.
+  mlflow:
+    <<: *restart
+    image: ghcr.io/mlflow/mlflow:v3.16.1
+    profiles: ["mlops"]
+    command: >-
+      mlflow server --host 0.0.0.0 --port 5000 --workers 1 --static-prefix /mlflow
+      --backend-store-uri sqlite:////mlflow/mlflow.db --artifacts-destination /mlflow/artifacts --serve-artifacts
+      --allowed-hosts mlflow:5000,localhost:5000
+    environment:
+      # наружу не ходим: телеметрия MLflow выключена
+      MLFLOW_DISABLE_TELEMETRY: "true"
+      DO_NOT_TRACK: "true"
+      # фоновые задачи MLflow 3 (оценка LLM-трасс) нам не нужны: с ними сервис весит 1,5 ГБ вместо 350 МБ
+      MLFLOW_SERVER_ENABLE_JOB_EXECUTION: "false"
+    volumes:
+      - mlflow:/mlflow
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:5000/mlflow/health', timeout=3).status == 200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      start_period: 60s
+
+  # ------------------------------------------------ profile: monitoring (REQ-MON)
+  prometheus:
+    image: prom/prometheus:v3.13.3
+    profiles: ["monitoring"]
+    <<: *restart
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+
+  grafana:
+    image: grafana/grafana:13.1.6
+    profiles: ["monitoring"]
+    <<: *restart
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-change-me}   # задайте в .env.stand
+    ports: ["127.0.0.1:3001:3000"]              # только через SSH-туннель
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on: [prometheus]
+
+volumes:
+  data:
+  mlflow:
+  rin:
+  caddy-data:
+  caddy-config:

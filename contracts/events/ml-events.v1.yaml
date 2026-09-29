@@ -1,0 +1,942 @@
+openapi: 3.0.3
+info:
+  title: Инспектор ИИ — обмен api ⇄ ml (HTTP-задачи и сообщения очереди)
+  version: 0.8.0
+  description: |
+    Обмен задачами между api и ml. Сообщение всегда — Envelope, транспорт выбирается конфигом:
+
+    - ML_TRANSPORT=http (ПО УМОЛЧАНИЮ, локальный запуск без инфраструктуры):
+        api → POST {ML_URL}/v1/jobs (Envelope с reply_to);
+        ml по завершении → POST {reply_to} (Envelope с результатом) — см. callbacks.
+    - ML_TRANSPORT=amqp (опционально): те же Envelope через RabbitMQ, топология ниже.
+
+    Хранилище файлов: S3Ref.bucket = "local" означает файловую систему,
+    путь = {STORAGE_DIR}/{key} (STORAGE_DIR общий для api и ml при локальном запуске).
+    Иначе — S3/MinIO.
+
+    Оформлено как OpenAPI 3.0, чтобы использовать те же генераторы, что и для REST:
+    openapi-typescript (TS) и datamodel-code-generator (Python).
+    Доменные модели берутся из ../openapi/inspector-api.v1.yaml.
+
+    Топология: exchange `inspector` (topic), DLX `inspector.dlx`.
+      ml.parse.request    → очередь ml.parse            (api → ml)
+      ml.parse.result     → очередь api.parse-result    (ml → api)
+      ml.compare.request  → очередь ml.compare          (api → ml)
+      ml.compare.result   → очередь api.compare-result  (ml → api)
+
+    Каждое сообщение — Envelope; поле payload по type.
+    Обработчики идемпотентны по message_id. Сообщения — JSON, UTF-8, content_type=application/json.
+  license:
+    name: Proprietary
+    url: https://github.com/mixvadimyt-clon/425c044b3e1dfbf2bc140402005ee151073fa592cbc096a8eaf626b1c3ee7a3b
+servers:
+  - url: http://localhost:8000
+    description: ml (dev)
+paths:
+  /health:
+    get:
+      operationId: mlHealth
+      summary: Проверка живости ML-сервиса
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [ok, degraded]
+                  version:
+                    type: string
+                  capabilities:
+                    type: object
+                    description: >-
+                      Какие необязательные компоненты доступны: ocr, ocr_gpu (видит ли
+                      распознавание видеокарту прямо сейчас — нормативы меряют
+                      в GPU-конфигурации), docling, llm, cv, pdf, embeddings
+                    additionalProperties:
+                      type: boolean
+  /v1/jobs:
+    post:
+      operationId: submitJob
+      summary: Поставить задачу парсинга/сравнения (HTTP-транспорт)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Envelope'
+      responses:
+        '202':
+          description: Задача принята (повтор того же message_id — идемпотентно)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobState'
+        '400':
+          description: Некорректное сообщение
+      callbacks:
+        jobResult:
+          '{$request.body#/reply_to}':
+            post:
+              summary: Результат задачи (Envelope с ParseResult/CompareResult)
+              security: []
+              requestBody:
+                required: true
+                content:
+                  application/json:
+                    schema:
+                      $ref: '#/components/schemas/Envelope'
+              responses:
+                '204':
+                  description: Принято api
+  /v1/jobs/{message_id}:
+    get:
+      operationId: getJob
+      summary: Состояние задачи (для отладки и повторного забора результата)
+      security: []
+      parameters:
+        - name: message_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobState'
+        '404':
+          description: Нет такой задачи
+components:
+  schemas:
+    EventType:
+      type: string
+      enum:
+        - ml.parse.request
+        - ml.parse.result
+        - ml.compare.request
+        - ml.compare.result
+    Envelope:
+      type: object
+      required: [message_id, type, schema_version, correlation_id, created_at, payload]
+      properties:
+        message_id:
+          type: string
+          format: uuid
+        type:
+          $ref: '#/components/schemas/EventType'
+        schema_version:
+          type: string
+          example: 0.1.0
+        correlation_id:
+          type: string
+          format: uuid
+          description: process_id
+        reply_to:
+          type: string
+          nullable: true
+          description: HTTP-транспорт — URL, куда ml отправит Envelope с результатом
+        attempt:
+          type: integer
+          minimum: 1
+          default: 1
+          description: Номер попытки (REQ-UPL-06 — не более 3 = 1 + 2 повтора)
+        created_at:
+          type: string
+          format: date-time
+        payload:
+          oneOf:
+            - $ref: '#/components/schemas/ParseRequest'
+            - $ref: '#/components/schemas/ParseResult'
+            - $ref: '#/components/schemas/CompareRequest'
+            - $ref: '#/components/schemas/CompareResult'
+    JobStatus:
+      type: string
+      enum: [OK, FAILED]
+    JobState:
+      type: object
+      required: [message_id, state]
+      properties:
+        message_id:
+          type: string
+          format: uuid
+        state:
+          type: string
+          enum: [QUEUED, RUNNING, DONE, FAILED]
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        result:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/Envelope'
+          nullable: true
+    JobError:
+      type: object
+      required: [code, message, retryable]
+      properties:
+        code:
+          type: string
+          description: 'CORRUPTED_FILE, UNREADABLE, TIMEOUT, OCR_FAILED, INTERNAL, ...'
+        message:
+          type: string
+        retryable:
+          type: boolean
+    S3Ref:
+      type: object
+      required: [bucket, key]
+      properties:
+        bucket:
+          type: string
+          example: inspector
+        key:
+          type: string
+          example: raw/9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+
+    # ------------------------------------------------------------------ parse
+    ParseRequest:
+      type: object
+      required: [process_id, object_id, file]
+      properties:
+        process_id:
+          type: string
+          format: uuid
+        object_id:
+          type: string
+          format: uuid
+        file:
+          type: object
+          required: [file_id, sha256, format, source, original_name, size_bytes]
+          properties:
+            file_id:
+              type: string
+              format: uuid
+            sha256:
+              type: string
+            format:
+              $ref: '../openapi/inspector-api.v1.yaml#/components/schemas/FileFormat'
+            source:
+              $ref: '#/components/schemas/S3Ref'
+            original_name:
+              type: string
+            size_bytes:
+              type: integer
+            stage_hint:
+              $ref: '../openapi/inspector-api.v1.yaml#/components/schemas/DocStage'
+        options:
+          type: object
+          properties:
+            force_reparse:
+              type: boolean
+              default: false
+              description: Игнорировать кеш Redis
+            force_ocr:
+              type: boolean
+              default: false
+            timeout_s:
+              type: integer
+              default: 600
+    DocumentMetadata:
+      type: object
+      description: Метаданные документа, извлечённые ML (REQ-PRS-08). Поля null — не удалось определить.
+      properties:
+        doc_stage:
+          type: string
+          allOf:
+            - $ref: '../openapi/inspector-api.v1.yaml#/components/schemas/DocStage'
+          nullable: true
+        doc_kind:
+          type: string
+          nullable: true
+        discipline:
+          type: string
+          nullable: true
+        document_code:
+          type: string
+          nullable: true
+        revision:
+          type: string
+          nullable: true
+        approval_status:
+          $ref: '../openapi/inspector-api.v1.yaml#/components/schemas/ApprovalStatus'
+        approval_date:
+          type: string
+          format: date
+          nullable: true
+        signature_status:
+          $ref: '../openapi/inspector-api.v1.yaml#/components/schemas/SignatureStatus'
+        object_name:
+          type: string
+          nullable: true
+        object_address:
+          type: string
+          nullable: true
+        sheets:
+          type: array
+          description: Соответствие страниц PDF и номеров листов по штампу
+          items:
+            type: object
+            required: [page]
+            properties:
+              page:
+                type: integer
+                minimum: 1
+              sheet:
+                type: string
+                nullable: true
+              sheet_title:
+                type: string
+                nullable: true
+        stamps:
+          type: object
+          description: Штампы ИД (Приказ 344/пр) — «В производство работ», «Выполнено согласно проекту»
+          properties:
+            in_production:
+              type: boolean
+              nullable: true
+            as_built:
+              type: boolean
+              nullable: true
+        requisites:
+          type: object
+          description: Реквизиты сканов ИД (подписи, печати, даты, рег. номера)
+          properties:
+            signatures:
+              type: boolean
+              nullable: true
+            seals:
+              type: boolean
+              nullable: true
+            dates:
+              type: boolean
+              nullable: true
+            registration_numbers:
+              type: boolean
+              nullable: true
+        field_confidence:
+          type: object
+          additionalProperties:
+            type: number
+        # --- сведения о файле и содержимом (0.6.0; считает metadata/facts.py)
+        project_code:
+          type: string
+          nullable: true
+          description: Шифр проекта — часть шифра документа до стадии и марки («ЖС-РД-270121»)
+          example: ЖС-РД-270121
+        language:
+          type: string
+          enum: [ru, en, mixed]
+          nullable: true
+          description: Язык текста по доле кириллицы
+        scan_share:
+          type: number
+          minimum: 0
+          maximum: 1
+          nullable: true
+          description: Доля страниц, прошедших распознавание (скан)
+        file_size:
+          type: integer
+          minimum: 0
+          nullable: true
+          description: Размер файла, байт
+        pdf_version:
+          type: string
+          nullable: true
+          example: PDF 1.7
+        pdf_producer:
+          type: string
+          nullable: true
+          description: Программа, записавшая PDF (заголовок файла)
+          example: AutoCAD PDF
+        pdf_creator:
+          type: string
+          nullable: true
+          description: Программа, в которой создан документ (заголовок файла)
+          example: Revit
+        encrypted:
+          type: boolean
+          nullable: true
+          description: PDF зашифрован
+        # --- 0.7.0; считает metadata/organization.py
+        developer_org:
+          type: string
+          nullable: true
+          description: >-
+            Организация-разработчик ПД/РД — графа 9 основной надписи или титул, правовая форма
+            сокращена («ООО «ГЕНПРОЕКТ»»). Для ИД null. У ИП только «ИП» — без фамилии (152-ФЗ).
+            Уверенность — field_confidence.developer_org
+          example: ООО «ГЕНПРОЕКТ»
+    ParseResult:
+      type: object
+      required: [process_id, file_id, sha256, status]
+      properties:
+        process_id:
+          type: string
+          format: uuid
+        file_id:
+          type: string
+          format: uuid
+        sha256:
+          type: string
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        error:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/JobError'
+          nullable: true
+        parser_version:
+          type: string
+        parsed_ref:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/S3Ref'
+          nullable: true
+          description: JSON по схеме ParsedDocument
+        metadata:
+          $ref: '#/components/schemas/DocumentMetadata'
+        quality:
+          $ref: '../openapi/inspector-api.v1.yaml#/components/schemas/FileQuality'
+        from_cache:
+          type: boolean
+        duration_ms:
+          type: integer
+
+    ParsedDocument:
+      type: object
+      description: |
+        Содержимое parsed/{sha256}/{parser_version}.json в S3. Формирует ml parse-worker,
+        читает ml compare-worker (api этот файл не читает).
+      required: [sha256, parser_version, format, pages]
+      properties:
+        sha256:
+          type: string
+        parser_version:
+          type: string
+        format:
+          $ref: '../openapi/inspector-api.v1.yaml#/components/schemas/FileFormat'
+        metadata:
+          $ref: '#/components/schemas/DocumentMetadata'
+        pages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ParsedPage'
+    ParsedPage:
+      type: object
+      required: [page, width_pt, height_pt, rotation, source, quality, blocks]
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        width_pt:
+          type: number
+          description: Ширина видимой области (после CropBox и Rotate), pt
+        height_pt:
+          type: number
+        rotation:
+          type: integer
+          enum: [0, 90, 180, 270]
+        source:
+          $ref: '../openapi/inspector-api.v1.yaml#/components/schemas/TextSource'
+        quality:
+          $ref: '../openapi/inspector-api.v1.yaml#/components/schemas/PageQuality'
+        ocr_confidence:
+          type: number
+          nullable: true
+        is_drawing:
+          type: boolean
+          description: Страница — чертёж (графический лист)
+        blocks:
+          type: array
+          items:
+            $ref: '#/components/schemas/TextBlock'
+        tables:
+          type: array
+          items:
+            $ref: '#/components/schemas/ParsedTable'
+        drawing:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/DrawingAnalysis'
+          nullable: true
+    TextBlock:
+      type: object
+      required: [id, type, text, bbox]
+      properties:
+        id:
+          type: string
+          description: Уникален в пределах документа, например p3-b17
+        type:
+          type: string
+          enum: [text, heading, title_block, stamp, dimension, table_caption, handwriting]
+        layer:
+          type: string
+          nullable: true
+          description: Имя слоя PDF (OCG), если текст лежит в слое САПР
+        text:
+          type: string
+        bbox:
+          $ref: '../openapi/inspector-api.v1.yaml#/components/schemas/BBox'
+        polygon:
+          type: array
+          allOf:
+            - $ref: '../openapi/inspector-api.v1.yaml#/components/schemas/Polygon'
+          nullable: true
+        confidence:
+          type: number
+          nullable: true
+        quality:
+          $ref: '../openapi/inspector-api.v1.yaml#/components/schemas/PageQuality'
+        words:
+          type: array
+          description: Опционально — слова с координатами (для точной подсветки)
+          items:
+            type: object
+            required: [text, bbox]
+            properties:
+              text:
+                type: string
+              bbox:
+                $ref: '../openapi/inspector-api.v1.yaml#/components/schemas/BBox'
+              confidence:
+                type: number
+                nullable: true
+    ParsedTable:
+      type: object
+      required: [id, bbox, cells]
+      properties:
+        id:
+          type: string
+        bbox:
+          $ref: '../openapi/inspector-api.v1.yaml#/components/schemas/BBox'
+        title:
+          type: string
+          nullable: true
+          description: Например «Ведомость заполнения проёмов», «ТЭП»
+        header_rows:
+          type: integer
+          default: 1
+        cells:
+          type: array
+          items:
+            type: object
+            required: [row, col, text]
+            properties:
+              row:
+                type: integer
+              col:
+                type: integer
+              row_span:
+                type: integer
+                default: 1
+              col_span:
+                type: integer
+                default: 1
+              text:
+                type: string
+              bbox:
+                $ref: '../openapi/inspector-api.v1.yaml#/components/schemas/BBox'
+    DrawingAnalysis:
+      type: object
+      description: Результат CV-анализа чертежа (REQ-PRS-05)
+      properties:
+        scale:
+          type: string
+          nullable: true
+          example: '1:100'
+        mm_per_unit:
+          type: number
+          nullable: true
+          description: Миллиметров натуры на 1.0 нормализованной ширины страницы
+        measurements:
+          type: array
+          items:
+            type: object
+            required: [kind, value_mm, bbox]
+            properties:
+              kind:
+                type: string
+                enum: [dimension_text, measured_line]
+              value_mm:
+                type: number
+              label:
+                type: string
+                nullable: true
+              bbox:
+                $ref: '../openapi/inspector-api.v1.yaml#/components/schemas/BBox'
+              confidence:
+                type: number
+                nullable: true
+
+    # ---------------------------------------------------------------- compare
+    CompareFile:
+      type: object
+      required: [file_id, sha256, parsed_ref, metadata, uploaded_at]
+      properties:
+        file_id:
+          type: string
+          format: uuid
+        sha256:
+          type: string
+        original_name:
+          type: string
+        parsed_ref:
+          $ref: '#/components/schemas/S3Ref'
+        metadata:
+          $ref: '#/components/schemas/DocumentMetadata'
+        predecessor_id:
+          type: string
+          format: uuid
+          nullable: true
+        successor_id:
+          type: string
+          format: uuid
+          nullable: true
+        external_file_id:
+          type: string
+          nullable: true
+          description: file_id из реестра — его же нужно писать в выгрузку GOLD
+        in_registry:
+          type: boolean
+        sheet_page_range:
+          type: string
+          nullable: true
+        metadata_source:
+          $ref: '../openapi/inspector-api.v1.yaml#/components/schemas/MetadataSource'
+        is_authoritative:
+          type: boolean
+          nullable: true
+          description: Ручной выбор инспектора имеет приоритет над автоматическим выбором редакции
+        uploaded_at:
+          type: string
+          format: date-time
+    CompareRequest:
+      type: object
+      required: [process_id, object_id, protocol_version, mode, matrix, files, versions]
+      properties:
+        process_id:
+          type: string
+          format: uuid
+        object_id:
+          type: string
+          format: uuid
+        protocol_version:
+          type: integer
+          minimum: 1
+          description: Номер версии протокола, которая будет создана из результата
+        mode:
+          type: string
+          enum: [FULL, INCREMENTAL]
+        changed_file_ids:
+          type: array
+          description: Для INCREMENTAL — новые/изменённые файлы
+          items:
+            type: string
+            format: uuid
+        matrix:
+          type: object
+          required: [version, params]
+          properties:
+            version:
+              type: string
+            params:
+              type: array
+              items:
+                $ref: '../openapi/inspector-api.v1.yaml#/components/schemas/MatrixParam'
+        logical_rules:
+          type: array
+          items:
+            $ref: '../openapi/inspector-api.v1.yaml#/components/schemas/LogicalRule'
+        normative_docs:
+          type: array
+          items:
+            $ref: '../openapi/inspector-api.v1.yaml#/components/schemas/NormativeDoc'
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/CompareFile'
+        registry_status:
+          $ref: '../openapi/inspector-api.v1.yaml#/components/schemas/RegistryStatus'
+        excluded_files:
+          type: array
+          description: >-
+            Файлы, которые хранятся для аудита, но не участвуют в эталонном сравнении (заменённые/аннулированные редакции).
+            Дубликаты содержимого сюда не попадают — их в запросе нет совсем.
+          items:
+            type: object
+            required: [file_id, reason]
+            properties:
+              file_id:
+                type: string
+                format: uuid
+              reason:
+                type: string
+        expected_documents:
+          type: array
+          description: Ожидаемый состав из реестра (пусто — реестра нет; комплект нельзя объявить полным)
+          items:
+            $ref: '../openapi/inspector-api.v1.yaml#/components/schemas/ExpectedDocument'
+        expected_files_per_stage:
+          type: object
+          description: Если известно ожидаемое число файлов по стадиям (для PARTIALLY_LOADED)
+          additionalProperties:
+            type: integer
+        versions:
+          type: object
+          required: [dataset_version]
+          properties:
+            dataset_version:
+              type: string
+            model_version:
+              type: string
+              nullable: true
+              description: null — использовать текущую опубликованную модель
+    CheckResult:
+      type: object
+      description: Результат по одному атомарному правилу; api превращает его в Finding
+      required:
+        - finding_key
+        - param_code
+        - finding_status
+        - completeness_status
+        - review_priority
+        - fragments
+      properties:
+        finding_key:
+          type: string
+        param_code:
+          type: string
+        rule_key:
+          type: string
+          nullable: true
+        finding_status:
+          type: string
+          description: Любой FindingStatus, КРОМЕ CONFIRMED_VIOLATION и SUSPICION
+          enum:
+            - NEGATIVE_VERIFIED
+            - CANDIDATE
+            - MISSING_EVIDENCE
+            - NOT_APPLICABLE
+            - NOT_COMPARABLE
+            - CLARIFICATION_REQUIRED
+        completeness_status:
+          $ref: '../openapi/inspector-api.v1.yaml#/components/schemas/CompletenessStatus'
+        stages_compared:
+          type: array
+          items:
+            $ref: '../openapi/inspector-api.v1.yaml#/components/schemas/DocStage'
+        missing_sources:
+          type: array
+          items:
+            type: string
+        expected_value:
+          type: string
+          nullable: true
+        actual_value:
+          type: string
+          nullable: true
+        delta:
+          type: string
+          nullable: true
+        stage_comparisons:
+          type: array
+          description: Сравнение с эталоном по каждой стадии (0.5.0); api отдаёт как есть в Finding
+          items:
+            $ref: '../openapi/inspector-api.v1.yaml#/components/schemas/StageComparison'
+        unit:
+          type: string
+          nullable: true
+        review_priority:
+          $ref: '../openapi/inspector-api.v1.yaml#/components/schemas/ReviewPriority'
+        risk_level:
+          $ref: '../openapi/inspector-api.v1.yaml#/components/schemas/ReviewPriority'
+        rationale:
+          type: string
+          nullable: true
+        rationale_source:
+          $ref: '../openapi/inspector-api.v1.yaml#/components/schemas/RationaleSource'
+        normative_reference:
+          type: string
+          nullable: true
+        confidence:
+          type: number
+          nullable: true
+        page_pair_key:
+          type: string
+          nullable: true
+          description: Ссылка на PagePairResult.pair_key
+        approved_change_ref:
+          type: string
+          nullable: true
+        # --- 0.8.0: у фрагмента extraction_method (RULES | SBERT), см. EvidenceFragment
+        fragments:
+          type: array
+          items:
+            $ref: '../openapi/inspector-api.v1.yaml#/components/schemas/EvidenceFragment'
+    SuspicionResult:
+      type: object
+      required: [suspicion_key, discovery_method, confidence, description, review_priority]
+      properties:
+        suspicion_key:
+          type: string
+        discovery_method:
+          $ref: '../openapi/inspector-api.v1.yaml#/components/schemas/DiscoveryMethod'
+        confidence:
+          type: number
+        description:
+          type: string
+        pd_reference:
+          type: string
+          nullable: true
+        rd_reference:
+          type: string
+          nullable: true
+        id_reference:
+          type: string
+          nullable: true
+        review_priority:
+          $ref: '../openapi/inspector-api.v1.yaml#/components/schemas/ReviewPriority'
+        normative_base:
+          type: string
+          nullable: true
+        rule_id:
+          type: string
+          nullable: true
+        page_pair_key:
+          type: string
+          nullable: true
+        evidence:
+          type: array
+          items:
+            $ref: '../openapi/inspector-api.v1.yaml#/components/schemas/EvidenceFragment'
+    PageLocator:
+      type: object
+      required: [file_id, page]
+      properties:
+        file_id:
+          type: string
+          format: uuid
+        page:
+          type: integer
+          minimum: 1
+    PagePairResult:
+      type: object
+      description: Сопоставленная пара страниц (режим «Сравнение PDF-схем»)
+      required: [pair_key, left, right, match_score, diff_regions]
+      properties:
+        pair_key:
+          type: string
+          description: Уникален в пределах результата
+        left:
+          $ref: '#/components/schemas/PageLocator'
+        right:
+          $ref: '#/components/schemas/PageLocator'
+        match_score:
+          type: number
+        homography:
+          type: array
+          nullable: true
+          minItems: 9
+          maxItems: 9
+          items:
+            type: number
+        compliance_percent:
+          type: number
+          nullable: true
+        diff_regions:
+          type: array
+          items:
+            type: object
+            required: [left_bbox, right_bbox]
+            properties:
+              left_bbox:
+                $ref: '../openapi/inspector-api.v1.yaml#/components/schemas/BBox'
+              right_bbox:
+                $ref: '../openapi/inspector-api.v1.yaml#/components/schemas/BBox'
+              score:
+                type: number
+              label:
+                type: string
+                nullable: true
+              finding_key:
+                type: string
+                nullable: true
+              suspicion_key:
+                type: string
+                nullable: true
+    CompareResult:
+      type: object
+      required: [process_id, protocol_version, status]
+      properties:
+        process_id:
+          type: string
+          format: uuid
+        protocol_version:
+          type: integer
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        error:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/JobError'
+          nullable: true
+        mode:
+          type: string
+          enum: [FULL, INCREMENTAL]
+        scenario:
+          $ref: '../openapi/inspector-api.v1.yaml#/components/schemas/CheckScenario'
+        upload_status:
+          type: array
+          items:
+            $ref: '../openapi/inspector-api.v1.yaml#/components/schemas/StageUploadStatus'
+        affected_param_codes:
+          type: array
+          description: Для INCREMENTAL — какие параметры пересчитаны (остальные api берёт из прошлой версии)
+          items:
+            type: string
+        checks:
+          type: array
+          items:
+            $ref: '#/components/schemas/CheckResult'
+        suspicions:
+          type: array
+          items:
+            $ref: '#/components/schemas/SuspicionResult'
+        page_pairs:
+          type: array
+          items:
+            $ref: '#/components/schemas/PagePairResult'
+        file_resolution:
+          type: array
+          description: Какие файлы выбраны эталоном/актуальной редакцией и почему
+          items:
+            type: object
+            required: [file_id, role]
+            properties:
+              file_id:
+                type: string
+                format: uuid
+              role:
+                type: string
+                enum: [ACTUAL, SUPERSEDED, CONFLICT, UNRESOLVED]
+              reason:
+                type: string
+        versions:
+          $ref: '../openapi/inspector-api.v1.yaml#/components/schemas/VersionSet'
+        stats:
+          type: object
+          properties:
+            duration_ms:
+              type: integer
+            params_evaluated:
+              type: integer

@@ -1,0 +1,10 @@
+* text=auto eol=lf
+*.pdf binary
+*.png binary
+*.jpg binary
+*.docx binary
+*.ttf binary
+# lock-файлы: не пытаться сливать построчно — перегенерировать
+package-lock.json merge=binary linguist-generated=true
+uv.lock merge=binary linguist-generated=true
+contracts/dist/** linguist-generated=true

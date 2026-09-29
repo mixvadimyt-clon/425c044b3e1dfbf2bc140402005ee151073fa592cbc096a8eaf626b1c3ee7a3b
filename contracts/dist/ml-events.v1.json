@@ -1,0 +1,2115 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Инспектор ИИ — обмен api ⇄ ml (HTTP-задачи и сообщения очереди)",
+    "version": "0.8.0",
+    "description": "Обмен задачами между api и ml. Сообщение всегда — Envelope, транспорт выбирается конфигом:\n\n- ML_TRANSPORT=http (ПО УМОЛЧАНИЮ, локальный запуск без инфраструктуры):\n    api → POST {ML_URL}/v1/jobs (Envelope с reply_to);\n    ml по завершении → POST {reply_to} (Envelope с результатом) — см. callbacks.\n- ML_TRANSPORT=amqp (опционально): те же Envelope через RabbitMQ, топология ниже.\n\nХранилище файлов: S3Ref.bucket = \"local\" означает файловую систему,\nпуть = {STORAGE_DIR}/{key} (STORAGE_DIR общий для api и ml при локальном запуске).\nИначе — S3/MinIO.\n\nОформлено как OpenAPI 3.0, чтобы использовать те же генераторы, что и для REST:\nopenapi-typescript (TS) и datamodel-code-generator (Python).\nДоменные модели берутся из ../openapi/inspector-api.v1.yaml.\n\nТопология: exchange `inspector` (topic), DLX `inspector.dlx`.\n  ml.parse.request    → очередь ml.parse            (api → ml)\n  ml.parse.result     → очередь api.parse-result    (ml → api)\n  ml.compare.request  → очередь ml.compare          (api → ml)\n  ml.compare.result   → очередь api.compare-result  (ml → api)\n\nКаждое сообщение — Envelope; поле payload по type.\nОбработчики идемпотентны по message_id. Сообщения — JSON, UTF-8, content_type=application/json.\n",
+    "license": {
+      "name": "Proprietary",
+      "url": "https://github.com/mixvadimyt-clon/425c044b3e1dfbf2bc140402005ee151073fa592cbc096a8eaf626b1c3ee7a3b"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8000",
+      "description": "ml (dev)"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "mlHealth",
+        "summary": "Проверка живости ML-сервиса",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "status"
+                  ],
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok",
+                        "degraded"
+                      ]
+                    },
+                    "version": {
+                      "type": "string"
+                    },
+                    "capabilities": {
+                      "type": "object",
+                      "description": "Какие необязательные компоненты доступны: ocr, ocr_gpu (видит ли распознавание видеокарту прямо сейчас — нормативы меряют в GPU-конфигурации), docling, llm, cv, pdf, embeddings",
+                      "additionalProperties": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/jobs": {
+      "post": {
+        "operationId": "submitJob",
+        "summary": "Поставить задачу парсинга/сравнения (HTTP-транспорт)",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Envelope"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Задача принята (повтор того же message_id — идемпотентно)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobState"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Некорректное сообщение"
+          }
+        },
+        "callbacks": {
+          "jobResult": {
+            "{$request.body#/reply_to}": {
+              "post": {
+                "summary": "Результат задачи (Envelope с ParseResult/CompareResult)",
+                "security": [],
+                "requestBody": {
+                  "required": true,
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "$ref": "#/components/schemas/Envelope"
+                      }
+                    }
+                  }
+                },
+                "responses": {
+                  "204": {
+                    "description": "Принято api"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/jobs/{message_id}": {
+      "get": {
+        "operationId": "getJob",
+        "summary": "Состояние задачи (для отладки и повторного забора результата)",
+        "security": [],
+        "parameters": [
+          {
+            "name": "message_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobState"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Нет такой задачи"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "EventType": {
+        "type": "string",
+        "enum": [
+          "ml.parse.request",
+          "ml.parse.result",
+          "ml.compare.request",
+          "ml.compare.result"
+        ]
+      },
+      "Envelope": {
+        "type": "object",
+        "required": [
+          "message_id",
+          "type",
+          "schema_version",
+          "correlation_id",
+          "created_at",
+          "payload"
+        ],
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "$ref": "#/components/schemas/EventType"
+          },
+          "schema_version": {
+            "type": "string",
+            "example": "0.1.0"
+          },
+          "correlation_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "process_id"
+          },
+          "reply_to": {
+            "type": "string",
+            "nullable": true,
+            "description": "HTTP-транспорт — URL, куда ml отправит Envelope с результатом"
+          },
+          "attempt": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Номер попытки (REQ-UPL-06 — не более 3 = 1 + 2 повтора)"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "payload": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ParseRequest"
+              },
+              {
+                "$ref": "#/components/schemas/ParseResult"
+              },
+              {
+                "$ref": "#/components/schemas/CompareRequest"
+              },
+              {
+                "$ref": "#/components/schemas/CompareResult"
+              }
+            ]
+          }
+        }
+      },
+      "JobStatus": {
+        "type": "string",
+        "enum": [
+          "OK",
+          "FAILED"
+        ]
+      },
+      "JobState": {
+        "type": "object",
+        "required": [
+          "message_id",
+          "state"
+        ],
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "QUEUED",
+              "RUNNING",
+              "DONE",
+              "FAILED"
+            ]
+          },
+          "progress": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "result": {
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Envelope"
+              }
+            ],
+            "nullable": true
+          }
+        }
+      },
+      "JobError": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "retryable"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "CORRUPTED_FILE, UNREADABLE, TIMEOUT, OCR_FAILED, INTERNAL, ..."
+          },
+          "message": {
+            "type": "string"
+          },
+          "retryable": {
+            "type": "boolean"
+          }
+        }
+      },
+      "S3Ref": {
+        "type": "object",
+        "required": [
+          "bucket",
+          "key"
+        ],
+        "properties": {
+          "bucket": {
+            "type": "string",
+            "example": "inspector"
+          },
+          "key": {
+            "type": "string",
+            "example": "raw/9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+          }
+        }
+      },
+      "ParseRequest": {
+        "type": "object",
+        "required": [
+          "process_id",
+          "object_id",
+          "file"
+        ],
+        "properties": {
+          "process_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "object_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "file": {
+            "type": "object",
+            "required": [
+              "file_id",
+              "sha256",
+              "format",
+              "source",
+              "original_name",
+              "size_bytes"
+            ],
+            "properties": {
+              "file_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "sha256": {
+                "type": "string"
+              },
+              "format": {
+                "$ref": "#/components/schemas/FileFormat"
+              },
+              "source": {
+                "$ref": "#/components/schemas/S3Ref"
+              },
+              "original_name": {
+                "type": "string"
+              },
+              "size_bytes": {
+                "type": "integer"
+              },
+              "stage_hint": {
+                "$ref": "#/components/schemas/DocStage"
+              }
+            }
+          },
+          "options": {
+            "type": "object",
+            "properties": {
+              "force_reparse": {
+                "type": "boolean",
+                "default": false,
+                "description": "Игнорировать кеш Redis"
+              },
+              "force_ocr": {
+                "type": "boolean",
+                "default": false
+              },
+              "timeout_s": {
+                "type": "integer",
+                "default": 600
+              }
+            }
+          }
+        }
+      },
+      "DocumentMetadata": {
+        "type": "object",
+        "description": "Метаданные документа, извлечённые ML (REQ-PRS-08). Поля null — не удалось определить.",
+        "properties": {
+          "doc_stage": {
+            "type": "string",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DocStage"
+              }
+            ],
+            "nullable": true
+          },
+          "doc_kind": {
+            "type": "string",
+            "nullable": true
+          },
+          "discipline": {
+            "type": "string",
+            "nullable": true
+          },
+          "document_code": {
+            "type": "string",
+            "nullable": true
+          },
+          "revision": {
+            "type": "string",
+            "nullable": true
+          },
+          "approval_status": {
+            "$ref": "#/components/schemas/ApprovalStatus"
+          },
+          "approval_date": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "signature_status": {
+            "$ref": "#/components/schemas/SignatureStatus"
+          },
+          "object_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "object_address": {
+            "type": "string",
+            "nullable": true
+          },
+          "sheets": {
+            "type": "array",
+            "description": "Соответствие страниц PDF и номеров листов по штампу",
+            "items": {
+              "type": "object",
+              "required": [
+                "page"
+              ],
+              "properties": {
+                "page": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "sheet": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "sheet_title": {
+                  "type": "string",
+                  "nullable": true
+                }
+              }
+            }
+          },
+          "stamps": {
+            "type": "object",
+            "description": "Штампы ИД (Приказ 344/пр) — «В производство работ», «Выполнено согласно проекту»",
+            "properties": {
+              "in_production": {
+                "type": "boolean",
+                "nullable": true
+              },
+              "as_built": {
+                "type": "boolean",
+                "nullable": true
+              }
+            }
+          },
+          "requisites": {
+            "type": "object",
+            "description": "Реквизиты сканов ИД (подписи, печати, даты, рег. номера)",
+            "properties": {
+              "signatures": {
+                "type": "boolean",
+                "nullable": true
+              },
+              "seals": {
+                "type": "boolean",
+                "nullable": true
+              },
+              "dates": {
+                "type": "boolean",
+                "nullable": true
+              },
+              "registration_numbers": {
+                "type": "boolean",
+                "nullable": true
+              }
+            }
+          },
+          "field_confidence": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number"
+            }
+          },
+          "project_code": {
+            "type": "string",
+            "nullable": true,
+            "description": "Шифр проекта — часть шифра документа до стадии и марки («ЖС-РД-270121»)",
+            "example": "ЖС-РД-270121"
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "ru",
+              "en",
+              "mixed"
+            ],
+            "nullable": true,
+            "description": "Язык текста по доле кириллицы"
+          },
+          "scan_share": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "nullable": true,
+            "description": "Доля страниц, прошедших распознавание (скан)"
+          },
+          "file_size": {
+            "type": "integer",
+            "minimum": 0,
+            "nullable": true,
+            "description": "Размер файла, байт"
+          },
+          "pdf_version": {
+            "type": "string",
+            "nullable": true,
+            "example": "PDF 1.7"
+          },
+          "pdf_producer": {
+            "type": "string",
+            "nullable": true,
+            "description": "Программа, записавшая PDF (заголовок файла)",
+            "example": "AutoCAD PDF"
+          },
+          "pdf_creator": {
+            "type": "string",
+            "nullable": true,
+            "description": "Программа, в которой создан документ (заголовок файла)",
+            "example": "Revit"
+          },
+          "encrypted": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "PDF зашифрован"
+          },
+          "developer_org": {
+            "type": "string",
+            "nullable": true,
+            "description": "Организация-разработчик ПД/РД — графа 9 основной надписи или титул, правовая форма сокращена («ООО «ГЕНПРОЕКТ»»). Для ИД null. У ИП только «ИП» — без фамилии (152-ФЗ). Уверенность — field_confidence.developer_org",
+            "example": "ООО «ГЕНПРОЕКТ»"
+          }
+        }
+      },
+      "ParseResult": {
+        "type": "object",
+        "required": [
+          "process_id",
+          "file_id",
+          "sha256",
+          "status"
+        ],
+        "properties": {
+          "process_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "file_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "error": {
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/JobError"
+              }
+            ],
+            "nullable": true
+          },
+          "parser_version": {
+            "type": "string"
+          },
+          "parsed_ref": {
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/S3Ref"
+              }
+            ],
+            "nullable": true,
+            "description": "JSON по схеме ParsedDocument"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/DocumentMetadata"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/FileQuality"
+          },
+          "from_cache": {
+            "type": "boolean"
+          },
+          "duration_ms": {
+            "type": "integer"
+          }
+        }
+      },
+      "ParsedDocument": {
+        "type": "object",
+        "description": "Содержимое parsed/{sha256}/{parser_version}.json в S3. Формирует ml parse-worker,\nчитает ml compare-worker (api этот файл не читает).\n",
+        "required": [
+          "sha256",
+          "parser_version",
+          "format",
+          "pages"
+        ],
+        "properties": {
+          "sha256": {
+            "type": "string"
+          },
+          "parser_version": {
+            "type": "string"
+          },
+          "format": {
+            "$ref": "#/components/schemas/FileFormat"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/DocumentMetadata"
+          },
+          "pages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ParsedPage"
+            }
+          }
+        }
+      },
+      "ParsedPage": {
+        "type": "object",
+        "required": [
+          "page",
+          "width_pt",
+          "height_pt",
+          "rotation",
+          "source",
+          "quality",
+          "blocks"
+        ],
+        "properties": {
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "width_pt": {
+            "type": "number",
+            "description": "Ширина видимой области (после CropBox и Rotate), pt"
+          },
+          "height_pt": {
+            "type": "number"
+          },
+          "rotation": {
+            "type": "integer",
+            "enum": [
+              0,
+              90,
+              180,
+              270
+            ]
+          },
+          "source": {
+            "$ref": "#/components/schemas/TextSource"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/PageQuality"
+          },
+          "ocr_confidence": {
+            "type": "number",
+            "nullable": true
+          },
+          "is_drawing": {
+            "type": "boolean",
+            "description": "Страница — чертёж (графический лист)"
+          },
+          "blocks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TextBlock"
+            }
+          },
+          "tables": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ParsedTable"
+            }
+          },
+          "drawing": {
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DrawingAnalysis"
+              }
+            ],
+            "nullable": true
+          }
+        }
+      },
+      "TextBlock": {
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "text",
+          "bbox"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Уникален в пределах документа, например p3-b17"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "text",
+              "heading",
+              "title_block",
+              "stamp",
+              "dimension",
+              "table_caption",
+              "handwriting"
+            ]
+          },
+          "layer": {
+            "type": "string",
+            "nullable": true,
+            "description": "Имя слоя PDF (OCG), если текст лежит в слое САПР"
+          },
+          "text": {
+            "type": "string"
+          },
+          "bbox": {
+            "$ref": "#/components/schemas/BBox"
+          },
+          "polygon": {
+            "type": "array",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Polygon"
+              }
+            ],
+            "nullable": true
+          },
+          "confidence": {
+            "type": "number",
+            "nullable": true
+          },
+          "quality": {
+            "$ref": "#/components/schemas/PageQuality"
+          },
+          "words": {
+            "type": "array",
+            "description": "Опционально — слова с координатами (для точной подсветки)",
+            "items": {
+              "type": "object",
+              "required": [
+                "text",
+                "bbox"
+              ],
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "bbox": {
+                  "$ref": "#/components/schemas/BBox"
+                },
+                "confidence": {
+                  "type": "number",
+                  "nullable": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "ParsedTable": {
+        "type": "object",
+        "required": [
+          "id",
+          "bbox",
+          "cells"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "bbox": {
+            "$ref": "#/components/schemas/BBox"
+          },
+          "title": {
+            "type": "string",
+            "nullable": true,
+            "description": "Например «Ведомость заполнения проёмов», «ТЭП»"
+          },
+          "header_rows": {
+            "type": "integer",
+            "default": 1
+          },
+          "cells": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "row",
+                "col",
+                "text"
+              ],
+              "properties": {
+                "row": {
+                  "type": "integer"
+                },
+                "col": {
+                  "type": "integer"
+                },
+                "row_span": {
+                  "type": "integer",
+                  "default": 1
+                },
+                "col_span": {
+                  "type": "integer",
+                  "default": 1
+                },
+                "text": {
+                  "type": "string"
+                },
+                "bbox": {
+                  "$ref": "#/components/schemas/BBox"
+                }
+              }
+            }
+          }
+        }
+      },
+      "DrawingAnalysis": {
+        "type": "object",
+        "description": "Результат CV-анализа чертежа (REQ-PRS-05)",
+        "properties": {
+          "scale": {
+            "type": "string",
+            "nullable": true,
+            "example": "1:100"
+          },
+          "mm_per_unit": {
+            "type": "number",
+            "nullable": true,
+            "description": "Миллиметров натуры на 1.0 нормализованной ширины страницы"
+          },
+          "measurements": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "kind",
+                "value_mm",
+                "bbox"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "dimension_text",
+                    "measured_line"
+                  ]
+                },
+                "value_mm": {
+                  "type": "number"
+                },
+                "label": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "bbox": {
+                  "$ref": "#/components/schemas/BBox"
+                },
+                "confidence": {
+                  "type": "number",
+                  "nullable": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "CompareFile": {
+        "type": "object",
+        "required": [
+          "file_id",
+          "sha256",
+          "parsed_ref",
+          "metadata",
+          "uploaded_at"
+        ],
+        "properties": {
+          "file_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "original_name": {
+            "type": "string"
+          },
+          "parsed_ref": {
+            "$ref": "#/components/schemas/S3Ref"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/DocumentMetadata"
+          },
+          "predecessor_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "successor_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "external_file_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "file_id из реестра — его же нужно писать в выгрузку GOLD"
+          },
+          "in_registry": {
+            "type": "boolean"
+          },
+          "sheet_page_range": {
+            "type": "string",
+            "nullable": true
+          },
+          "metadata_source": {
+            "$ref": "#/components/schemas/MetadataSource"
+          },
+          "is_authoritative": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "Ручной выбор инспектора имеет приоритет над автоматическим выбором редакции"
+          },
+          "uploaded_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "CompareRequest": {
+        "type": "object",
+        "required": [
+          "process_id",
+          "object_id",
+          "protocol_version",
+          "mode",
+          "matrix",
+          "files",
+          "versions"
+        ],
+        "properties": {
+          "process_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "object_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "protocol_version": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Номер версии протокола, которая будет создана из результата"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "FULL",
+              "INCREMENTAL"
+            ]
+          },
+          "changed_file_ids": {
+            "type": "array",
+            "description": "Для INCREMENTAL — новые/изменённые файлы",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "matrix": {
+            "type": "object",
+            "required": [
+              "version",
+              "params"
+            ],
+            "properties": {
+              "version": {
+                "type": "string"
+              },
+              "params": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/MatrixParam"
+                }
+              }
+            }
+          },
+          "logical_rules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LogicalRule"
+            }
+          },
+          "normative_docs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NormativeDoc"
+            }
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CompareFile"
+            }
+          },
+          "registry_status": {
+            "$ref": "#/components/schemas/RegistryStatus"
+          },
+          "excluded_files": {
+            "type": "array",
+            "description": "Файлы, которые хранятся для аудита, но не участвуют в эталонном сравнении (заменённые/аннулированные редакции). Дубликаты содержимого сюда не попадают — их в запросе нет совсем.",
+            "items": {
+              "type": "object",
+              "required": [
+                "file_id",
+                "reason"
+              ],
+              "properties": {
+                "file_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "expected_documents": {
+            "type": "array",
+            "description": "Ожидаемый состав из реестра (пусто — реестра нет; комплект нельзя объявить полным)",
+            "items": {
+              "$ref": "#/components/schemas/ExpectedDocument"
+            }
+          },
+          "expected_files_per_stage": {
+            "type": "object",
+            "description": "Если известно ожидаемое число файлов по стадиям (для PARTIALLY_LOADED)",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          },
+          "versions": {
+            "type": "object",
+            "required": [
+              "dataset_version"
+            ],
+            "properties": {
+              "dataset_version": {
+                "type": "string"
+              },
+              "model_version": {
+                "type": "string",
+                "nullable": true,
+                "description": "null — использовать текущую опубликованную модель"
+              }
+            }
+          }
+        }
+      },
+      "CheckResult": {
+        "type": "object",
+        "description": "Результат по одному атомарному правилу; api превращает его в Finding",
+        "required": [
+          "finding_key",
+          "param_code",
+          "finding_status",
+          "completeness_status",
+          "review_priority",
+          "fragments"
+        ],
+        "properties": {
+          "finding_key": {
+            "type": "string"
+          },
+          "param_code": {
+            "type": "string"
+          },
+          "rule_key": {
+            "type": "string",
+            "nullable": true
+          },
+          "finding_status": {
+            "type": "string",
+            "description": "Любой FindingStatus, КРОМЕ CONFIRMED_VIOLATION и SUSPICION",
+            "enum": [
+              "NEGATIVE_VERIFIED",
+              "CANDIDATE",
+              "MISSING_EVIDENCE",
+              "NOT_APPLICABLE",
+              "NOT_COMPARABLE",
+              "CLARIFICATION_REQUIRED"
+            ]
+          },
+          "completeness_status": {
+            "$ref": "#/components/schemas/CompletenessStatus"
+          },
+          "stages_compared": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DocStage"
+            }
+          },
+          "missing_sources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expected_value": {
+            "type": "string",
+            "nullable": true
+          },
+          "actual_value": {
+            "type": "string",
+            "nullable": true
+          },
+          "delta": {
+            "type": "string",
+            "nullable": true
+          },
+          "stage_comparisons": {
+            "type": "array",
+            "description": "Сравнение с эталоном по каждой стадии (0.5.0); api отдаёт как есть в Finding",
+            "items": {
+              "$ref": "#/components/schemas/StageComparison"
+            }
+          },
+          "unit": {
+            "type": "string",
+            "nullable": true
+          },
+          "review_priority": {
+            "$ref": "#/components/schemas/ReviewPriority"
+          },
+          "risk_level": {
+            "$ref": "#/components/schemas/ReviewPriority"
+          },
+          "rationale": {
+            "type": "string",
+            "nullable": true
+          },
+          "rationale_source": {
+            "$ref": "#/components/schemas/RationaleSource"
+          },
+          "normative_reference": {
+            "type": "string",
+            "nullable": true
+          },
+          "confidence": {
+            "type": "number",
+            "nullable": true
+          },
+          "page_pair_key": {
+            "type": "string",
+            "nullable": true,
+            "description": "Ссылка на PagePairResult.pair_key"
+          },
+          "approved_change_ref": {
+            "type": "string",
+            "nullable": true
+          },
+          "fragments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EvidenceFragment"
+            }
+          }
+        }
+      },
+      "SuspicionResult": {
+        "type": "object",
+        "required": [
+          "suspicion_key",
+          "discovery_method",
+          "confidence",
+          "description",
+          "review_priority"
+        ],
+        "properties": {
+          "suspicion_key": {
+            "type": "string"
+          },
+          "discovery_method": {
+            "$ref": "#/components/schemas/DiscoveryMethod"
+          },
+          "confidence": {
+            "type": "number"
+          },
+          "description": {
+            "type": "string"
+          },
+          "pd_reference": {
+            "type": "string",
+            "nullable": true
+          },
+          "rd_reference": {
+            "type": "string",
+            "nullable": true
+          },
+          "id_reference": {
+            "type": "string",
+            "nullable": true
+          },
+          "review_priority": {
+            "$ref": "#/components/schemas/ReviewPriority"
+          },
+          "normative_base": {
+            "type": "string",
+            "nullable": true
+          },
+          "rule_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "page_pair_key": {
+            "type": "string",
+            "nullable": true
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EvidenceFragment"
+            }
+          }
+        }
+      },
+      "PageLocator": {
+        "type": "object",
+        "required": [
+          "file_id",
+          "page"
+        ],
+        "properties": {
+          "file_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "PagePairResult": {
+        "type": "object",
+        "description": "Сопоставленная пара страниц (режим «Сравнение PDF-схем»)",
+        "required": [
+          "pair_key",
+          "left",
+          "right",
+          "match_score",
+          "diff_regions"
+        ],
+        "properties": {
+          "pair_key": {
+            "type": "string",
+            "description": "Уникален в пределах результата"
+          },
+          "left": {
+            "$ref": "#/components/schemas/PageLocator"
+          },
+          "right": {
+            "$ref": "#/components/schemas/PageLocator"
+          },
+          "match_score": {
+            "type": "number"
+          },
+          "homography": {
+            "type": "array",
+            "nullable": true,
+            "minItems": 9,
+            "maxItems": 9,
+            "items": {
+              "type": "number"
+            }
+          },
+          "compliance_percent": {
+            "type": "number",
+            "nullable": true
+          },
+          "diff_regions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "left_bbox",
+                "right_bbox"
+              ],
+              "properties": {
+                "left_bbox": {
+                  "$ref": "#/components/schemas/BBox"
+                },
+                "right_bbox": {
+                  "$ref": "#/components/schemas/BBox"
+                },
+                "score": {
+                  "type": "number"
+                },
+                "label": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "finding_key": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "suspicion_key": {
+                  "type": "string",
+                  "nullable": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "CompareResult": {
+        "type": "object",
+        "required": [
+          "process_id",
+          "protocol_version",
+          "status"
+        ],
+        "properties": {
+          "process_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "protocol_version": {
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "error": {
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/JobError"
+              }
+            ],
+            "nullable": true
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "FULL",
+              "INCREMENTAL"
+            ]
+          },
+          "scenario": {
+            "$ref": "#/components/schemas/CheckScenario"
+          },
+          "upload_status": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StageUploadStatus"
+            }
+          },
+          "affected_param_codes": {
+            "type": "array",
+            "description": "Для INCREMENTAL — какие параметры пересчитаны (остальные api берёт из прошлой версии)",
+            "items": {
+              "type": "string"
+            }
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CheckResult"
+            }
+          },
+          "suspicions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SuspicionResult"
+            }
+          },
+          "page_pairs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PagePairResult"
+            }
+          },
+          "file_resolution": {
+            "type": "array",
+            "description": "Какие файлы выбраны эталоном/актуальной редакцией и почему",
+            "items": {
+              "type": "object",
+              "required": [
+                "file_id",
+                "role"
+              ],
+              "properties": {
+                "file_id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "ACTUAL",
+                    "SUPERSEDED",
+                    "CONFLICT",
+                    "UNRESOLVED"
+                  ]
+                },
+                "reason": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "versions": {
+            "$ref": "#/components/schemas/VersionSet"
+          },
+          "stats": {
+            "type": "object",
+            "properties": {
+              "duration_ms": {
+                "type": "integer"
+              },
+              "params_evaluated": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "FileFormat": {
+        "type": "string",
+        "description": "OTHER — формат без анализа (архивы, DWG, изображения); принимается карточкой файла при серверном импорте и из загруженных папки или архива",
+        "enum": [
+          "PDF",
+          "DOCX",
+          "XML",
+          "OTHER"
+        ]
+      },
+      "DocStage": {
+        "type": "string",
+        "description": "Стадия документации — ПД / РД / ИД",
+        "enum": [
+          "PD",
+          "RD",
+          "ID"
+        ]
+      },
+      "ApprovalStatus": {
+        "type": "string",
+        "description": "Статус утверждения редакции (реестр файлов, «Перечень ИД» ред. 1.1):\nDRAFT — черновик, эталоном не служит; APPROVED — утверждена; FOR_CONSTRUCTION — выдана «В производство работ»;\nSUPERSEDED — заменена новой редакцией (хранится для аудита, из эталонного сравнения исключается);\nCANCELLED — аннулирована (исключается); UNKNOWN — реестра нет и ML не определил статус.\n",
+        "enum": [
+          "DRAFT",
+          "APPROVED",
+          "FOR_CONSTRUCTION",
+          "SUPERSEDED",
+          "CANCELLED",
+          "UNKNOWN"
+        ]
+      },
+      "SignatureStatus": {
+        "type": "string",
+        "description": "Наличие требуемой подписи — SIGNED (подписи в штампе), QES (УКЭП), ABSENT (требуемой подписи нет), NOT_REQUIRED, UNKNOWN",
+        "enum": [
+          "SIGNED",
+          "QES",
+          "ABSENT",
+          "NOT_REQUIRED",
+          "UNKNOWN"
+        ]
+      },
+      "FileQuality": {
+        "type": "object",
+        "properties": {
+          "pages_total": {
+            "type": "integer"
+          },
+          "pages_text_layer": {
+            "type": "integer"
+          },
+          "pages_ocr": {
+            "type": "integer"
+          },
+          "low_quality_pages": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "abstain_pages": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "ocr_mean_confidence": {
+            "type": "number",
+            "nullable": true
+          }
+        }
+      },
+      "ReviewPriority": {
+        "type": "string",
+        "description": "Только очерёдность экспертной проверки, не юридическое действие",
+        "enum": [
+          "HIGH",
+          "MEDIUM",
+          "LOW"
+        ]
+      },
+      "ParamDataType": {
+        "type": "string",
+        "enum": [
+          "number",
+          "string",
+          "boolean",
+          "coordinate",
+          "enum"
+        ]
+      },
+      "MatrixParamInput": {
+        "type": "object",
+        "description": "Поля таблицы Params (ТЗ §8.1)",
+        "required": [
+          "code",
+          "section",
+          "parameter_name",
+          "data_type",
+          "review_priority"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 20,
+            "example": "M-055"
+          },
+          "external_code": {
+            "type": "string",
+            "maxLength": 20,
+            "nullable": true,
+            "description": "Код параметра у организаторов (каталог parameter_catalog_132) — для выгрузки submission",
+            "example": "KR-055"
+          },
+          "section": {
+            "type": "string",
+            "maxLength": 50,
+            "example": "КР"
+          },
+          "parameter_name": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "unit": {
+            "type": "string",
+            "maxLength": 20,
+            "nullable": true
+          },
+          "source_pd": {
+            "type": "string",
+            "nullable": true
+          },
+          "source_rd": {
+            "type": "string",
+            "nullable": true
+          },
+          "source_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "Источник в ИД (не путать с идентификатором)"
+          },
+          "trigger_logic": {
+            "type": "string",
+            "nullable": true,
+            "example": "< 0.9 м"
+          },
+          "review_priority": {
+            "$ref": "#/components/schemas/ReviewPriority"
+          },
+          "sp_reference": {
+            "type": "string",
+            "nullable": true
+          },
+          "gost_reference": {
+            "type": "string",
+            "nullable": true
+          },
+          "fz_reference": {
+            "type": "string",
+            "nullable": true
+          },
+          "other_normative": {
+            "type": "string",
+            "nullable": true
+          },
+          "data_type": {
+            "$ref": "#/components/schemas/ParamDataType"
+          },
+          "min_value": {
+            "type": "number",
+            "nullable": true
+          },
+          "max_value": {
+            "type": "number",
+            "nullable": true
+          },
+          "regex_pattern": {
+            "type": "string",
+            "maxLength": 255,
+            "nullable": true
+          },
+          "semantic_anchors": {
+            "type": "array",
+            "description": "Расширение — фразы-якоря для семантического поиска",
+            "items": {
+              "type": "string"
+            }
+          },
+          "enum_values": {
+            "type": "array",
+            "description": "Расширение — упорядоченные значения для data_type=enum (например классы бетона)",
+            "items": {
+              "type": "string"
+            }
+          },
+          "is_active": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      },
+      "MatrixParam": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/MatrixParamInput"
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "created_at",
+              "updated_at"
+            ],
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "created_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "updated_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        ]
+      },
+      "LogicalRuleInput": {
+        "type": "object",
+        "required": [
+          "rule_name",
+          "condition",
+          "expected"
+        ],
+        "properties": {
+          "rule_name": {
+            "type": "string"
+          },
+          "condition": {
+            "type": "string",
+            "description": "Условие на извлечённых значениях, язык правил (docs/domain/matrix.md): ссылки «КОД.СТАДИЯ», сравнения, and / or / not, exists() и missing(). Например «exists(M-002.PD) and exists(M-002.RD)». Проверяется при сохранении: неверное выражение или неизвестный код параметра — 400 RULE_INVALID."
+          },
+          "expected": {
+            "type": "string",
+            "description": "Ожидаемое следствие, тот же язык: например «M-002.RD == M-002.PD»"
+          },
+          "normative_base": {
+            "type": "string",
+            "nullable": true
+          },
+          "review_priority": {
+            "$ref": "#/components/schemas/ReviewPriority"
+          },
+          "is_active": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      },
+      "LogicalRule": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/LogicalRuleInput"
+          },
+          {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          }
+        ]
+      },
+      "NormativeDocInput": {
+        "type": "object",
+        "required": [
+          "document_name",
+          "document_number"
+        ],
+        "properties": {
+          "document_name": {
+            "type": "string"
+          },
+          "document_number": {
+            "type": "string"
+          },
+          "section": {
+            "type": "string",
+            "nullable": true
+          },
+          "parameter_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "min_value": {
+            "type": "number",
+            "nullable": true
+          },
+          "max_value": {
+            "type": "number",
+            "nullable": true
+          },
+          "effective_from": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "effective_to": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          }
+        }
+      },
+      "NormativeDoc": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NormativeDocInput"
+          },
+          {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          }
+        ]
+      },
+      "MetadataSource": {
+        "type": "string",
+        "description": "Откуда взяты метаданные файла (приоритет — манифест, затем ML, затем имя файла)",
+        "enum": [
+          "MANIFEST",
+          "ML",
+          "FILENAME"
+        ]
+      },
+      "RegistryStatus": {
+        "type": "string",
+        "description": "Есть ли у комплекта машиночитаемый реестр файлов (без него комплект — CLARIFICATION_REQUIRED)",
+        "enum": [
+          "PRESENT",
+          "ABSENT"
+        ]
+      },
+      "ExpectedDocument": {
+        "type": "object",
+        "required": [
+          "doc_stage"
+        ],
+        "properties": {
+          "doc_stage": {
+            "$ref": "#/components/schemas/DocStage"
+          },
+          "discipline": {
+            "type": "string"
+          },
+          "document_code": {
+            "type": "string"
+          },
+          "file_name": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "CheckScenario": {
+        "type": "string",
+        "description": "Сценарий загрузки (REQ-CMP-03)",
+        "enum": [
+          "FULL",
+          "PD_RD_ONLY",
+          "PD_ID_ONLY",
+          "RD_ID_ONLY",
+          "SINGLE_ONLY",
+          "PARTIALLY_LOADED"
+        ]
+      },
+      "StageUploadStatus": {
+        "type": "string",
+        "description": "Статус загрузки по стадии (REQ-UPL-09)",
+        "enum": [
+          "PD_UPLOADED",
+          "PD_PARTIAL",
+          "PD_MISSING",
+          "RD_UPLOADED",
+          "RD_PARTIAL",
+          "RD_MISSING",
+          "ID_UPLOADED",
+          "ID_PARTIAL",
+          "ID_MISSING"
+        ]
+      },
+      "CompletenessStatus": {
+        "type": "string",
+        "description": "Комплектность доказательств (схема GOLD, Приложение 1), отдельно от finding_status:\nCOMPLETE — все нужные источники есть и сопоставимы; MISSING_EVIDENCE — обязательного источника нет;\nNOT_APPLICABLE — параметр неприменим (с основанием); NOT_COMPARABLE — файл нечитаем или листы не сопоставлены;\nCLARIFICATION_REQUIRED — нет реестра или несколько редакций без однозначного статуса.\n",
+        "enum": [
+          "COMPLETE",
+          "MISSING_EVIDENCE",
+          "NOT_APPLICABLE",
+          "NOT_COMPARABLE",
+          "CLARIFICATION_REQUIRED"
+        ]
+      },
+      "StageComparison": {
+        "type": "object",
+        "description": "Сравнение значения одной стадии с эталоном ПД",
+        "required": [
+          "stage",
+          "triggered"
+        ],
+        "properties": {
+          "stage": {
+            "$ref": "#/components/schemas/DocStage"
+          },
+          "value": {
+            "type": "string",
+            "nullable": true,
+            "description": "Нормализованное значение стадии («11905.3», «B25»)"
+          },
+          "raw_value": {
+            "type": "string",
+            "nullable": true,
+            "description": "Как записано в документе («11 905,3»)"
+          },
+          "delta": {
+            "type": "string",
+            "nullable": true,
+            "description": "«-575.3 (-4.61 %)», «понижение на 1 ступ.»"
+          },
+          "triggered": {
+            "type": "boolean",
+            "description": "Сработал ли триггер матрицы на этой стадии"
+          },
+          "verdict": {
+            "type": "string",
+            "nullable": true,
+            "description": "Вывод по стадии («Отклонение 4.61 % больше порога 1 %»)"
+          }
+        }
+      },
+      "RationaleSource": {
+        "type": "string",
+        "description": "Кто сформулировал обоснование — правила или LLM (Qwen)",
+        "enum": [
+          "RULES",
+          "LLM"
+        ]
+      },
+      "EvidenceRole": {
+        "type": "string",
+        "enum": [
+          "EXPECTED",
+          "ACTUAL",
+          "CONTEXT"
+        ]
+      },
+      "BBox": {
+        "type": "array",
+        "description": "[x0, y0, x1, y1] в долях [0;1] видимой страницы, начало — левый верхний угол",
+        "minItems": 4,
+        "maxItems": 4,
+        "items": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "Polygon": {
+        "type": "array",
+        "description": "Точки [[x, y], ...] в той же системе координат, что и BBox",
+        "minItems": 3,
+        "items": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        }
+      },
+      "TextSource": {
+        "type": "string",
+        "description": "MANUAL — область указана инспектором вручную",
+        "enum": [
+          "TEXT_LAYER",
+          "OCR",
+          "DOCX",
+          "XML",
+          "MANUAL"
+        ]
+      },
+      "ExtractionMethod": {
+        "type": "string",
+        "description": "Как найдено значение фрагмента (0.23.0). RULES — правила матрицы и извлекатели ML;\nSBERT — запасной путь по смысловой близости подписи к названию параметра (Sentence-BERT,\nфлаг SBERT_ENABLED). Не путать с TextSource: тот говорит, откуда текст (слой, OCR), а этот —\nкак в тексте нашли значение.\n",
+        "enum": [
+          "RULES",
+          "SBERT"
+        ]
+      },
+      "PageQuality": {
+        "type": "string",
+        "description": "Качество распознавания страницы/зоны (REQ-PRS-03)",
+        "enum": [
+          "OK",
+          "LOW_QUALITY",
+          "ABSTAIN"
+        ]
+      },
+      "EvidenceFragment": {
+        "type": "object",
+        "description": "Доказательный фрагмент с координатами (REQ-PRS-06, REQ-CMP-09)",
+        "required": [
+          "role",
+          "file_id",
+          "sha256",
+          "stage",
+          "page",
+          "bbox"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "role": {
+            "$ref": "#/components/schemas/EvidenceRole"
+          },
+          "file_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "stage": {
+            "$ref": "#/components/schemas/DocStage"
+          },
+          "document_code": {
+            "type": "string",
+            "nullable": true
+          },
+          "revision": {
+            "type": "string",
+            "nullable": true
+          },
+          "approval_status": {
+            "$ref": "#/components/schemas/ApprovalStatus"
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "sheet": {
+            "type": "string",
+            "nullable": true,
+            "description": "Номер листа по штампу (может отличаться от номера страницы PDF)"
+          },
+          "bbox": {
+            "$ref": "#/components/schemas/BBox"
+          },
+          "polygon": {
+            "type": "array",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Polygon"
+              }
+            ],
+            "nullable": true
+          },
+          "extracted_value": {
+            "type": "string",
+            "nullable": true,
+            "description": "Значение как в документе"
+          },
+          "normalized_value": {
+            "type": "string",
+            "nullable": true,
+            "description": "Нормализованное значение (число в базовых единицах, марка и т.п.)"
+          },
+          "text_snippet": {
+            "type": "string",
+            "nullable": true
+          },
+          "source": {
+            "$ref": "#/components/schemas/TextSource"
+          },
+          "extraction_method": {
+            "type": "string",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ExtractionMethod"
+              }
+            ],
+            "nullable": true,
+            "description": "null — RULES (протоколы до 0.23.0 и области, указанные инспектором вручную)"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/PageQuality"
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        }
+      },
+      "DiscoveryMethod": {
+        "type": "string",
+        "description": "VISUAL_DIFF — расширение ТЗ (визуальное сравнение совмещённых чертежей).\nNORMATIVE_ANALYSIS оставлен для совместимости, но вне объёма: проект на соответствие нормам не проверяем.\n",
+        "enum": [
+          "LOGICAL_ANALYSIS",
+          "SEMANTIC_DISSONANCE",
+          "NORMATIVE_ANALYSIS",
+          "ML_PATTERN",
+          "VISUAL_DIFF"
+        ]
+      },
+      "VersionSet": {
+        "type": "object",
+        "description": "Версии, фиксируемые в каждом запуске и протоколе (REQ-CMP-02)",
+        "required": [
+          "matrix_version",
+          "model_version",
+          "dataset_version",
+          "input_manifest_hash"
+        ],
+        "properties": {
+          "matrix_version": {
+            "type": "string"
+          },
+          "model_version": {
+            "type": "string"
+          },
+          "dataset_version": {
+            "type": "string"
+          },
+          "parser_version": {
+            "type": "string"
+          },
+          "input_manifest_hash": {
+            "type": "string",
+            "description": "SHA-256 от отсортированного списка sha256 входных файлов"
+          }
+        }
+      }
+    }
+  }
+}

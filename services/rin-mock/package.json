@@ -1,0 +1,15 @@
+{
+  "name": "@inspector/rin-mock",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Мок внешней ИС надзора (ИАИС «РиН») по contracts/openapi/rin-external.v1.yaml — без зависимостей",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node src/main.mjs",
+    "package": "node src/make-package.mjs",
+    "test": "node --test"
+  }
+}

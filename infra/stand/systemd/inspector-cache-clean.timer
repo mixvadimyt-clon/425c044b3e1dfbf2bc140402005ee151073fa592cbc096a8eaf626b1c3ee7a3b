@@ -1,0 +1,10 @@
+[Unit]
+Description=Продукт — очистка кеша растров по воскресеньям в 04:30
+
+[Timer]
+OnCalendar=Sun *-*-* 04:30:00
+Persistent=true
+Unit=inspector-cache-clean.service
+
+[Install]
+WantedBy=timers.target

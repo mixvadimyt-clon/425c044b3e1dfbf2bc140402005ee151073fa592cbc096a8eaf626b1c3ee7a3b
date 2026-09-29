@@ -1,0 +1,117 @@
+name: CI
+
+# Триггер по push в main убран 22.09: проверки PR выполняются на коммите слияния с main — то есть ровно
+# на том, что попадёт в ветку, — поэтому повторный прогон после слияния перепроверял бы
+# то же самое. Замер 22.09: такие повторы съедали 216 из 571 минуты Actions, 38 % расхода
+# приватного репозитория. Нужно проверить main отдельно — Actions -> Run workflow.
+# ОТКЛЮЧЕНО ДО 01.10.2026 — минуты Actions исчерпаны до конца месяца (студенческая подписка,
+# лимит обновляется помесячно). Джобы не стартуют и падают с «The job was not started because
+# recent account payments have failed or your spending limit needs to be increased».
+#
+# Триггер по pull_request убран намеренно, а не забыт: иначе на каждом PR висят красные
+# проверки, которые ничего не значат, и мы привыкаем не смотреть на красное — а в октябре
+# настоящая поломка будет выглядеть так же.
+#
+# Пока отключено, проверки гоняем локально: ./scripts/check-local.sh (то же, что здесь,
+# шаг в шаг). Сборку образов и сквозной прогон заменяет ./start.sh на машине с Docker.
+#
+# ВЕРНУТЬ 01.10: раскомментировать блок pull_request ниже.
+on:
+#   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Какие сервисы уже созданы (джобы сервисов включаются автоматически после скаффолдинга)
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.d.outputs.api }}
+      web: ${{ steps.d.outputs.web }}
+      ml: ${{ steps.d.outputs.ml }}
+      rin-mock: ${{ steps.d.outputs.rin-mock }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: d
+        run: |
+          has() { if [ -f "$1" ]; then echo true; else echo false; fi; }
+          {
+            echo "api=$(has services/api/package.json)"
+            echo "web=$(has services/web/package.json)"
+            echo "ml=$(has services/ml/pyproject.toml)"
+            echo "rin-mock=$(has services/rin-mock/package.json)"
+          } >> "$GITHUB_OUTPUT"
+
+  contracts:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: contracts } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: contracts/package-lock.json }
+      - run: npm ci
+      - run: npm run lint
+      - name: dist актуален
+        run: |
+          npm run bundle
+          git diff --exit-code -- dist || (echo "::error::Запустите 'npm run bundle' в contracts/ и закоммитьте dist/" && exit 1)
+
+  api:
+    runs-on: ubuntu-latest
+    needs: detect
+    if: needs.detect.outputs.api == 'true'
+    defaults: { run: { working-directory: services/api } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: services/api/package-lock.json }
+      - run: npm ci
+      - run: npm run gen --if-present
+      - run: npm run lint --if-present
+      - run: npm run build --if-present
+      - run: npm test --if-present
+
+  rin-mock:
+    runs-on: ubuntu-latest
+    needs: detect
+    if: needs.detect.outputs.rin-mock == 'true'
+    defaults: { run: { working-directory: services/rin-mock } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      # зависимостей нет — только тесты (api тоже гоняет мок в test/integration.test.ts)
+      - run: npm test
+
+  web:
+    runs-on: ubuntu-latest
+    needs: detect
+    if: needs.detect.outputs.web == 'true'
+    defaults: { run: { working-directory: services/web } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: services/web/package-lock.json }
+      - run: npm ci
+      - run: npm run gen --if-present
+      - run: npm run lint --if-present
+      - run: npm run build --if-present
+      - run: npm test --if-present
+
+  ml:
+    runs-on: ubuntu-latest
+    needs: detect
+    if: needs.detect.outputs.ml == 'true'
+    defaults: { run: { working-directory: services/ml } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with: { enable-cache: true }
+      # базовый путь (PyMuPDF + OpenCV); тяжёлые extras — в ml-extras.yml
+      - run: uv sync --dev
+      - run: uv run gen
+      - run: uv run ruff check .
+      - run: uv run pytest -q

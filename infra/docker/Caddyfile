@@ -1,0 +1,57 @@
+# Caddy: статика веб-клиента и прокси к api. SITE_ADDRESS — «:80» или доменное имя (тогда HTTPS сам).
+{$SITE_ADDRESS::80} {
+	encode zstd gzip
+
+	# REST API и проверка живости — в api; /metrics и /internal наружу не отдаём
+	handle /api/* {
+		reverse_proxy api:3000
+	}
+	handle /health {
+		reverse_proxy api:3000
+	}
+	handle /internal/* {
+		respond 404
+	}
+	handle /metrics {
+		respond 404
+	}
+
+	# MLflow: своей авторизации нет — на каждый запрос спрашиваем api, есть ли сессия
+	# из админки (cookie inspector_mlflow). MLflow пускает только знакомый Host и отбивает чужой
+	# Origin, поэтому подменяем Host и убираем Origin: от подделки запросов здесь защищает
+	# cookie SameSite=Strict — с чужого сайта она не приходит, и api не пустит.
+	redir /mlflow /mlflow/
+	handle /mlflow/* {
+		forward_auth api:3000 {
+			uri /internal/auth/mlflow
+		}
+		reverse_proxy mlflow:5000 {
+			header_up Host mlflow:5000
+			header_up -Origin
+		}
+	}
+
+	# SPA: неизвестные пути — index.html (маршрутизация на клиенте)
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+		# CSP: токен входа лежит в localStorage, и главный риск — чужой
+		# скрипт на странице. Скрипты — только свои файлы, без встроенных; соединения — только
+		# со своим сайтом, то есть украденный токен не уйти наружу. 'unsafe-inline' у стилей —
+		# antd пишет стили в <style> при работе; 'wasm-unsafe-eval' — декодеры изображений pdf.js.
+		# Только для интерфейса: MLflow по /mlflow/ со своими скриптами политику не получает.
+		header Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; frame-src 'self'; frame-ancestors 'self'; object-src 'none'; base-uri 'self'; form-action 'self'"
+	}
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		X-Frame-Options SAMEORIGIN
+		-Server
+	}
+	log {
+		output stdout
+		format json
+	}
+}

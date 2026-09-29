@@ -1,0 +1,392 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.3s ease;
+  overflow: hidden;
+  height: 100vh;
+}
+
+body[data-theme='light'] {
+  background-color: #F8FAFC;
+}
+
+body[data-theme='dark'] {
+  background-color: #131416;
+}
+
+#root {
+  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Таблицы: значения переносятся на следующую строку по словам, а не прячутся за краем; заголовки всегда в одну строку;
+   при нехватке места — горизонтальный скролл. Правила Ant Design перекрываем через !important. */
+.ant-table-wrapper .ant-table-thead > tr > th {
+  white-space: nowrap;
+  word-break: normal !important;
+  overflow-wrap: normal !important;
+  word-wrap: normal !important;
+}
+
+.ant-table-wrapper .ant-table-tbody > tr > td {
+  white-space: normal;
+  word-break: normal;
+}
+
+/* Typography внутри таблиц по умолчанию рвёт слова где угодно (word-break: break-word) */
+.ant-table-wrapper .ant-typography {
+  word-break: normal !important;
+}
+
+/* Боковое меню: иконки на одной вертикали в развёрнутом и свёрнутом виде */
+.app-sider .ant-menu-inline,
+.app-sider .ant-menu-inline-collapsed {
+  border-inline-end: none;
+}
+
+.app-sider .ant-menu-item {
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.app-sider .ant-menu-inline-collapsed > .ant-menu-item {
+  padding-inline: calc(50% - 8px);
+}
+
+.app-sider .ant-menu-item .ant-menu-title-content {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Таблицы: всё выравнивается по левому краю (перекрывает align колонок) */
+.ant-table-thead > tr > th,
+.ant-table-tbody > tr > td {
+  text-align: left !important;
+}
+
+/* Основная область: отступы подстраиваются под ширину экрана (Windows 125–150 %, Mac Retina и т.п.) */
+.app-content {
+  margin: clamp(12px, 1.6vw, 24px) clamp(12px, 1.6vw, 24px) 0;
+  padding: clamp(16px, 1.8vw, 24px);
+  /* Рамка занимает всё окно под шапкой у всех страниц; страницы внутри берут height: 100% */
+  height: calc(100vh - 64px - var(--strip-h, 0px) - clamp(12px, 1.6vw, 24px));
+  box-sizing: border-box;
+  border-radius: 8px 8px 0 0;
+  min-height: 280px;
+  min-width: 0;
+  overflow: auto;
+}
+
+/* Верификация: та же рамка (поля и скругление), что у остальных страниц, но без внутренних отступов и без прокрутки самой страницы */
+.app-content-full {
+  padding: 0;
+  overflow: hidden;
+}
+
+/* Рабочая область не должна давать горизонтальный скролл всей страницы */
+.ant-layout {
+  min-width: 0;
+}
+
+/* Кнопки и подписи не ломаются по буквам */
+.ant-btn,
+.btn,
+.compare-toolbar button {
+  white-space: nowrap;
+}
+
+/* Заголовок карточки (например «Протокол проверки № …») переносится, а не обрезается многоточием */
+.ant-card-head-title {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+/* Длинные значения (адреса) переносятся по словам, а не по буквам */
+.ant-table-tbody > tr > td.col-wrap {
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: break-word;
+  hyphens: manual;
+}
+
+/* Шапка не выходит за границы окна: список проектов и имя пользователя сжимаются, подпись «Комплект:» скрывается на узком экране */
+.ant-layout-header {
+  overflow: hidden;
+}
+
+.header-user-btn {
+  max-width: clamp(120px, 16vw, 260px);
+  overflow: hidden;
+}
+
+.header-user-btn > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 1279px) {
+  .cb-prefix {
+    display: none;
+  }
+}
+
+/* Тёмная тема: нативные полосы прокрутки и элементы форм тёмные; серый текст, заданный в разметке, светлее для контраста */
+body[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+body[data-theme='dark'] [style*="color: rgb(102, 112, 133)"] {
+  color: #B9BEC5 !important;
+}
+
+/* Полоса режима данных: горит на любой странице, пока интерфейс работает не на настоящем api */
+.demo-strip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  min-height: 36px;
+  padding: 4px 16px;
+  background: #B42318;
+  color: #FFFFFF;
+  font-size: 13px;
+  line-height: 1.3;
+  text-align: center;
+}
+
+.demo-strip-stale {
+  background: #B54708;
+}
+
+.demo-strip .ant-btn {
+  color: #B42318;
+  border-color: #FFFFFF;
+  background: #FFFFFF;
+}
+
+/* Состояние системы в шапке: точка цвета и подпись, подпись прячется на узких экранах */
+.system-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.system-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.system-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+@media (max-width: 1399px) {
+  .system-chip-label {
+    display: none;
+  }
+}
+
+/* Метка «Демо-данные» рядом с заголовком страницы */
+.demo-tag {
+  display: inline-block;
+  margin-left: 10px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: #B42318;
+  color: #FFFFFF;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+/* Выделение полей при фокусе в цвет бренда вместо оранжевого кольца браузера (антовские поля оформлены сами) */
+textarea:not([class*='ant-']):focus,
+input:not([class*='ant-']):not([type='checkbox']):not([type='radio']):not([type='range']):focus {
+  outline: none;
+  border-color: #12988C !important; /* у части полей рамка задана в style */
+  box-shadow: 0 0 0 2px rgba(18, 152, 140, 0.2);
+}
+
+input[type='range']:focus-visible,
+input[type='checkbox']:focus-visible,
+select:focus-visible {
+  outline: 2px solid #12988C;
+  outline-offset: 2px;
+}
+
+/* Всплывающие уведомления (например, после загрузки документов) — плоские цветные плашки
+   в стиле «Загружено» на дашборде, а не стандартная белая карточка с серой тенью.
+   Цвет задан на .ant-message-custom-content (там же, где реально лежит класс ant-message-<type> —
+   он не оборачивает .ant-message-notice-content снаружи, а вложен внутрь него). */
+.ant-message-notice-content {
+  padding: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.ant-message-custom-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+.ant-message-custom-content.ant-message-success { background: #D1FAE5; color: #065F46; }
+.ant-message-custom-content.ant-message-error { background: #FEE2E2; color: #991B1B; }
+.ant-message-custom-content.ant-message-warning { background: #FEF3C7; color: #92400E; }
+.ant-message-custom-content.ant-message-info { background: #D5F0ED; color: #0B5F57; }
+
+.ant-message-custom-content .anticon {
+  color: inherit;
+}
+
+/* Все Alert (успех, инфо, предупреждение, ошибка) — тот же плоский вид, что у «Загружено» и уведомлений:
+   без рамки, радиус 8, высота по тексту, заголовок жирным. Отличаются только цветом. */
+.ant-alert {
+  padding: 8px 14px;
+  border: none;
+  border-radius: 8px;
+}
+
+.ant-alert .ant-alert-message {
+  font-weight: 600;
+}
+
+.ant-alert-success { background: #D1FAE5; }
+.ant-alert-info { background: #D5F0ED; }
+.ant-alert-warning { background: #FEF3C7; }
+.ant-alert-error { background: #FEE2E2; }
+
+.ant-alert-success .ant-alert-message,
+.ant-alert-success .ant-alert-description,
+.ant-alert-success .ant-alert-icon { color: #065F46; }
+
+.ant-alert-info .ant-alert-message,
+.ant-alert-info .ant-alert-description,
+.ant-alert-info .ant-alert-icon { color: #0B5F57; }
+
+.ant-alert-warning .ant-alert-message,
+.ant-alert-warning .ant-alert-description,
+.ant-alert-warning .ant-alert-icon { color: #92400E; }
+
+.ant-alert-error .ant-alert-message,
+.ant-alert-error .ant-alert-description,
+.ant-alert-error .ant-alert-icon { color: #991B1B; }
+
+/* Видимый фокус для работы с клавиатуры (WCAG 2.4.7): без него не видно, где курсор при Tab и горячих клавишах */
+button:focus-visible,
+a:focus-visible,
+[role='button']:focus-visible {
+  outline: 2px solid #12988C;
+  outline-offset: 2px;
+}
+
+/* Наведение на кнопки единообразно: вторичные (белые, контурные) получают зелёную рамку, «отменяющие» действия (Отмена, Не менять, Отклонить, Не отправлять) красную */
+body .ant-btn.ant-btn-default:not(.ant-btn-dangerous):not(:disabled):not(.ant-btn-disabled):hover,
+.btn-ghost:hover:not(:disabled),
+.tool-btn:hover:not(:disabled),
+.cmp-seg button:not(.is-on):hover:not(:disabled) {
+  border-color: #12988C;
+  color: #12988C;
+}
+
+.cmp-seg:hover {
+  border-color: #12988C;
+}
+
+.btn-white:hover:not(:disabled) {
+  border-color: #12988C !important;
+  color: #12988C !important;
+}
+
+body[data-theme='dark'] .ant-btn.ant-btn-default:not(.ant-btn-dangerous):not(:disabled):not(.ant-btn-disabled):hover,
+body[data-theme='dark'] .btn-ghost:hover:not(:disabled),
+body[data-theme='dark'] .tool-btn:hover:not(:disabled),
+body[data-theme='dark'] .cmp-seg button:not(.is-on):hover:not(:disabled),
+body[data-theme='dark'] .btn-white:hover:not(:disabled) {
+  border-color: #2DB5A8 !important;
+  color: #2DB5A8 !important;
+}
+
+body .ant-btn.negative-action:not(:disabled):not(.ant-btn-disabled):hover,
+body .btn-ghost.negative-action:hover:not(:disabled),
+body .btn-white.negative-action:hover:not(:disabled),
+body .tool-btn.negative-action:hover:not(:disabled),
+body .btn-danger.negative-action:hover:not(:disabled) {
+  border-color: #B42318 !important;
+  color: #B42318 !important;
+}
+
+body .btn-danger.negative-action:hover:not(:disabled) {
+  color: #FFFFFF !important;
+}
+
+body[data-theme='dark'] .ant-btn.negative-action:not(:disabled):not(.ant-btn-disabled):hover,
+body[data-theme='dark'] .btn-ghost.negative-action:hover:not(:disabled),
+body[data-theme='dark'] .btn-white.negative-action:hover:not(:disabled),
+body[data-theme='dark'] .tool-btn.negative-action:hover:not(:disabled) {
+  border-color: #F97066 !important;
+  color: #F97066 !important;
+}
+
+/* Окна и подтверждения antd: «Отмена» в подвале красная при наведении */
+body .ant-modal-footer .ant-btn.ant-btn-default:not(.ant-btn-dangerous):not(:disabled):not(.ant-btn-disabled):hover,
+body .ant-modal-confirm-btns .ant-btn.ant-btn-default:not(.ant-btn-dangerous):not(:disabled):not(.ant-btn-disabled):hover,
+body .ant-popconfirm-buttons .ant-btn.ant-btn-default:not(.ant-btn-dangerous):not(:disabled):not(.ant-btn-disabled):hover {
+  border-color: #B42318 !important;
+  color: #B42318 !important;
+}
+
+/* Переключатель режимов: рамка обрезается overflow, поэтому фокус рисуем внутри кнопки (видно, что выберется по Enter) */
+.cmp-seg button:focus-visible {
+  outline: 2px solid #12988C;
+  outline-offset: -4px;
+}
+
+.cmp-seg button.is-on:focus-visible {
+  outline-color: #FFFFFF;
+}
+
+/* Колонка после широкого текста: отступ слева, чтобы соседние заголовки не сливались */
+.ml-col-gap {
+  padding-left: 32px !important;
+}
+
+/*
+ * Выбор проекта в шапке: закрытое поле — обычное многоточие (шапка не должна расти по высоте от длинного названия),
+ * а в открытом списке название видно целиком, как в таблице, а не обрезается.
+ */
+.project-select-wide-dropdown .ant-select-item-option-content {
+  white-space: normal;
+  text-overflow: clip;
+  line-height: 1.35;
+}
+
+.project-select-wide-dropdown .ant-select-item {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}

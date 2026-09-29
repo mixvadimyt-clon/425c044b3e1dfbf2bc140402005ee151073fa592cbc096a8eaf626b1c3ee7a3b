@@ -1,0 +1,147 @@
+name: Images
+
+# Образы для сдачи и стенда (ADR-0007): сборка и сквозной прогон приложения в Docker —
+# то же, что на стенде: web (Caddy) → api → ml (CPU) → протокол. Локально Docker для этого не нужен.
+# Триггер по push в main убран 22.09: проверки PR выполняются на коммите слияния с main — то есть ровно
+# на том, что попадёт в ветку, — поэтому повторный прогон после слияния перепроверял бы
+# то же самое. Замер 22.09: такие повторы съедали 216 из 571 минуты Actions, 38 % расхода
+# приватного репозитория. Нужно проверить main отдельно — Actions -> Run workflow.
+# ОТКЛЮЧЕНО ДО 01.10.2026 — минуты Actions исчерпаны до конца месяца (студенческая подписка,
+# лимит обновляется помесячно). Джобы не стартуют и падают с «The job was not started because
+# recent account payments have failed or your spending limit needs to be increased».
+#
+# Триггер по pull_request убран намеренно, а не забыт: иначе на каждом PR висят красные
+# проверки, которые ничего не значат, и мы привыкаем не смотреть на красное — а в октябре
+# настоящая поломка будет выглядеть так же.
+#
+# Пока отключено, проверки гоняем локально: ./scripts/check-local.sh (то же, что здесь,
+# шаг в шаг). Сборку образов и сквозной прогон заменяет ./start.sh на машине с Docker.
+#
+# ВЕРНУТЬ 01.10: раскомментировать блок pull_request ниже.
+on:
+#   pull_request:
+#     paths:
+#       - 'services/api/**'
+#       - 'services/web/**'
+#       - 'services/ml/pyproject.toml'
+#       - 'services/ml/uv.lock'
+#       - 'services/ml/src/**'
+#       - 'services/rin-mock/**'
+#       - 'infra/docker/**'
+#       - 'contracts/dist/**'
+#       - 'data/matrix/params.csv'
+#       - 'docker-compose.app.yml'
+#       - 'scripts/stand-smoke.sh'
+#       - 'start.sh'
+#       - 'infra/stand/make-env.sh'
+#       - 'infra/stand/stand.env.example'
+#       - '.dockerignore'
+#       - '.github/workflows/images.yml'
+  workflow_dispatch:
+    inputs:
+      gpu:
+        description: Собрать и GPU-вариант образа ML (без запуска — на раннере нет GPU)
+        type: boolean
+        default: false
+
+concurrency:
+  group: images-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app:
+    name: образы и сквозной прогон (CPU)
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      COMPOSE: docker compose -f docker-compose.app.yml
+      JWT_SECRET: ci-jwt-secret
+      INTERNAL_TOKEN: ci-internal-token
+      DEMO_PASSWORD: ci-demo-password
+      IMPORT_DIR: ./var/import
+    steps:
+      - uses: actions/checkout@v4
+
+      # Ровно та команда, которую в README получает проверяющий: если однокомандный
+      # запуск сломается, это видно здесь, а не у проверяющих.
+      - name: Запуск одной командой — ./start.sh
+        run: |
+          mkdir -p var/import var/smoke
+          ./start.sh --cpu
+
+      - name: PDF для проверки — PyMuPDF из образа ml
+        run: |
+          $COMPOSE exec -T ml python - <<'PY'
+          import pymupdf
+          for name, label in (("KR-demo.pdf", "PD KR concrete class B30"), ("KJ-demo.pdf", "RD KJ01 concrete class B25")):
+              doc = pymupdf.open()
+              for i in range(2):
+                  page = doc.new_page()
+                  lines = [f"{label}, page {i + 1}", "Foundation slab Pm-1: concrete B30 W8 F150", "Smoke test document"]
+                  for j, line in enumerate(lines):
+                      page.insert_text((72, 72 + 18 * j), line, fontsize=12)
+              doc.save(f"/tmp/{name}")
+          PY
+          $COMPOSE cp ml:/tmp/KR-demo.pdf var/smoke/KR-demo.pdf
+          $COMPOSE cp ml:/tmp/KJ-demo.pdf var/smoke/KJ-demo.pdf
+
+      - name: Сквозной сценарий через веб-адрес
+        env:
+          SMOKE_OUT: var/smoke/protocol.json
+          SMOKE_WAIT_S: '600'
+        run: ./scripts/stand-smoke.sh http://localhost inspector "$DEMO_PASSWORD" var/smoke/KR-demo.pdf var/smoke/KJ-demo.pdf
+
+      - name: Разбор шёл в настоящем ML, а не в заглушке
+        run: |
+          $COMPOSE exec -T ml sh -c 'ls /data/storage/parsed | wc -l' | tee /dev/stderr | grep -qv '^0$'
+          python3 -c "import json; d=json.load(open('var/smoke/protocol.json')); m=d['versions']['model_version']; print('model_version:', m); assert not m.startswith('stub'), m"
+
+      - name: Размер образов
+        if: always()
+        run: docker images --format '{{.Repository}}:{{.Tag}} {{.Size}}' | grep inspector || true
+
+      - name: Логи при сбое
+        if: failure()
+        run: $COMPOSE logs --no-color --tail 200
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stand-smoke
+          path: var/smoke/
+          if-no-files-found: ignore
+
+  gpu-changed:
+    name: менялся ли GPU-образ
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.d.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 2 }
+      - id: d
+        # Проверяющий стенд — с GPU, и нормативы меряют именно там, поэтому сборку
+        # GPU-варианта нельзя оставлять ручной: она должна ломаться сразу, а не на сдаче.
+        run: |
+          base="${{ github.event.pull_request.base.sha || github.event.before }}"
+          [ -n "$base" ] && [ "$base" != "0000000000000000000000000000000000000000" ] || base=HEAD~1
+          if git diff --name-only "$base" HEAD | grep -qE '^(infra/docker/ml-gpu.Dockerfile|docker-compose.gpu.yml|services/ml/(pyproject.toml|uv.lock))$'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  ml-gpu:
+    name: GPU-вариант образа ML (только сборка)
+    needs: gpu-changed
+    if: (github.event_name == 'workflow_dispatch' && inputs.gpu) || needs.gpu-changed.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Место на диске раннера (CUDA-образ большой)
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
+      - name: Сборка
+        run: docker build -f infra/docker/ml-gpu.Dockerfile -t inspector-ml-gpu .
+      - name: Размер
+        run: docker images inspector-ml-gpu

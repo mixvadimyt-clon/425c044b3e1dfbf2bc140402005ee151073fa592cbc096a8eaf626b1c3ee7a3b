@@ -1,0 +1,56 @@
+# --- секреты и локальные настройки
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+infra/certs/*
+!infra/certs/.gitkeep
+
+# --- данные и модели (в git только маленькие фикстуры)
+dataset/
+var/
+data/raw/
+data/processed/
+data/gold/
+models/
+*.onnx
+*.pt
+*.safetensors
+
+# --- сгенерировано из contracts/ (contracts/dist коммитится!)
+contracts/dist-docs/
+services/api/src/generated/
+services/web/src/api/schema.d.ts
+services/ml/src/inspector_ml/contracts/*
+!services/ml/src/inspector_ml/contracts/__init__.py
+
+# --- Node
+node_modules/
+dist/
+!contracts/dist/
+build/
+coverage/
+*.log
+npm-debug.log*
+.vite/
+
+# --- Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+.ipynb_checkpoints/
+
+# --- IDE / OS
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+
+# Материалы организаторов (крупные PDF/DOCX; матрица лежит в data/matrix/source/)
+ТЗ/

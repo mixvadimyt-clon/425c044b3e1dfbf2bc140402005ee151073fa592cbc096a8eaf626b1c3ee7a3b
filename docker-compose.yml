@@ -1,0 +1,156 @@
+# «Продукт» — ОПЦИОНАЛЬНЫЙ полный контур из ТЗ (Postgres/Redis/RabbitMQ/MinIO/ClamAV/мониторинг).
+# Для разработки и демо НЕ нужен: всё запускается локально без Docker — см. docs/guides/dev-setup.md.
+# Само приложение (api, ml, web, rin-mock) для сдачи и стенда — docker-compose.app.yml (docs/guides/deploy.md).
+#   docker compose up -d                          # инфраструктура
+#   docker compose --profile mock up -d prism     # мок API на :4010
+#   docker compose --profile observability up -d # + cAdvisor (CPU/RAM по контейнерам)
+#   docker compose --profile elk up -d            # + Elasticsearch/Logstash/Kibana
+name: inspector
+
+services:
+  # ------------------------------------------------------------------ infra
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-inspector}
+      POSTGRES_USER: ${POSTGRES_USER:-inspector}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-inspector}
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-inspector}"]
+      interval: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports: ["6379:6379"]
+    volumes: [redisdata:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    ports: ["5672:5672", "15672:15672", "15692:15692"]
+    volumes:
+      - ./infra/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./infra/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+      - ./infra/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+      - rabbitdata:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 10s
+      retries: 12
+
+  minio:
+    image: minio/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-inspector}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-inspector-secret}
+    ports: ["9000:9000", "9001:9001"]
+    volumes: [miniodata:/data]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      retries: 10
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio: { condition: service_healthy }
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 $${S3_ACCESS_KEY:-inspector} $${S3_SECRET_KEY:-inspector-secret} &&
+      mc mb -p local/$${S3_BUCKET:-inspector} && echo bucket ready"
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-inspector}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-inspector-secret}
+      S3_BUCKET: ${S3_BUCKET:-inspector}
+    restart: "no"
+
+  clamav:
+    image: clamav/clamav:stable
+    ports: ["3310:3310"]
+    volumes: [clamdata:/var/lib/clamav]
+    healthcheck:
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 30s
+      retries: 20
+      start_period: 120s
+
+  prometheus:
+    image: prom/prometheus:v3.13.3
+    ports: ["9090:9090"]
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+    extra_hosts: ["host.docker.internal:host-gateway"]
+
+  grafana:
+    image: grafana/grafana:13.1.6
+    ports: ["3001:3000"]
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on: [prometheus]
+
+  # ------------------------------------------------------------ profile: mock
+  prism:
+    image: stoplight/prism:5
+    profiles: ["mock"]
+    command: ["mock", "-h", "0.0.0.0", "-d", "/contracts/openapi/inspector-api.v1.yaml"]
+    ports: ["4010:4010"]
+    volumes: [./contracts:/contracts:ro]
+
+  # ---------------------------------------------------- profile: observability
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    profiles: ["observability"]
+    privileged: true
+    ports: ["8081:8080"]
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+
+  # ------------------------------------------------------------- profile: elk
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
+    profiles: ["elk"]
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: -Xms1g -Xmx1g
+    ports: ["9200:9200"]
+    volumes: [esdata:/usr/share/elasticsearch/data]
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.15.0
+    profiles: ["elk"]
+    volumes: [./infra/elk/logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro]
+    ports: ["5044:5044"]
+    depends_on: [elasticsearch]
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.15.0
+    profiles: ["elk"]
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    ports: ["5601:5601"]
+    depends_on: [elasticsearch]
+
+volumes:
+  pgdata:
+  redisdata:
+  rabbitdata:
+  miniodata:
+  clamdata:
+  esdata:

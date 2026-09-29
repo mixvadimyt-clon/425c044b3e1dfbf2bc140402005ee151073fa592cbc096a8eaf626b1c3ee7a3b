@@ -1,0 +1,16 @@
+{
+  "name": "@inspector/contracts",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Контракты «Продукт»: OpenAPI 3.0 (REST) и схемы сообщений RabbitMQ",
+  "scripts": {
+    "lint": "redocly lint openapi/inspector-api.v1.yaml events/ml-events.v1.yaml openapi/rin-external.v1.yaml",
+    "bundle": "redocly bundle openapi/inspector-api.v1.yaml -o dist/inspector-api.v1.json && redocly bundle events/ml-events.v1.yaml -o dist/ml-events.v1.json && redocly bundle openapi/rin-external.v1.yaml -o dist/rin-external.v1.json",
+    "mock": "prism mock -h 0.0.0.0 -p 4010 openapi/inspector-api.v1.yaml",
+    "docs": "redocly build-docs openapi/inspector-api.v1.yaml -o dist-docs/api-docs.html"
+  },
+  "devDependencies": {
+    "@redocly/cli": "^2.0.0",
+    "@stoplight/prism-cli": "^5.0.0"
+  }
+}
