@@ -1,0 +1,10 @@
+[Unit]
+Description=Продукт — копия базы каждую ночь в 03:15 (ADR-0007)
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+Persistent=true
+Unit=inspector-backup.service
+
+[Install]
+WantedBy=timers.target

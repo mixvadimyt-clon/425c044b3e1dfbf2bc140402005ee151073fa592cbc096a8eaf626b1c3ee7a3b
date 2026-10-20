@@ -1,0 +1,80 @@
+[project]
+name = "inspector-ml"
+version = "0.1.0"
+description = "«Продукт» — ML-конвейер: парсинг ПД/РД/ИД, извлечение параметров матрицы, доказательства с bbox"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = { text = "Proprietary" }
+authors = [{ name = "Команда" }]
+
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "pydantic>=2.8",
+    "pydantic-settings>=2.4",
+    "httpx>=0.27",
+    "structlog>=24.4",
+    "prometheus-client>=0.21",
+    "pymupdf>=1.24",
+    "numpy>=1.26",
+    "opencv-python-headless>=4.10",
+    "rapidfuzz>=3.9",
+]
+
+[project.optional-dependencies]
+# Тяжёлые зависимости ставятся по требованию: uv sync --extra ocr --extra layout
+# PaddleOCR 2.x несовместим с paddlepaddle 3.x: старые модели PP-OCRv3 падают на fused_conv2d
+ocr = ["paddleocr>=3.5", "paddlepaddle>=3.0"]
+layout = ["docling>=2.0"]
+# torch — прямой зависимостью, чтобы взять сборку для процессора (источник ниже, [tool.uv.sources])
+embeddings = ["sentence-transformers>=3.0", "torch>=2.4"]
+llm = ["openai>=1.40"]
+
+[project.scripts]
+inspector-ml = "inspector_ml.cli:main"
+# Кодогенерация моделей из contracts/dist/ml-events.v1.json (вызывается в CI: uv run gen)
+gen = "inspector_ml.tools.codegen:main"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.6",
+    "pytest>=8.3",
+    "datamodel-code-generator>=0.25",
+]
+
+# torch для Sentence-BERT (extra embeddings) — сборка для процессора. С PyPI под Linux torch тянет весь CUDA 13
+# (cuda-toolkit, nvidia-cudnn-cu13, nccl, triton — несколько ГБ в образе). MiniLM на процессоре работает быстро,
+# а CUDA в образе с видеокартой уже есть у paddle. Индекс explicit: из него берётся только torch. На macOS
+# сборка с PyPI и так без CUDA.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform != 'darwin'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/inspector_ml"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+src = ["src", "tests"]
+# scripts/sbert_eval — скрипты опыта с Sentence-BERT, не код продукта
+extend-exclude = ["src/inspector_ml/contracts/events.py", "scripts/sbert_eval"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+# Документация и комментарии к доменной логике — на русском,
+# поэтому проверки «похожих» символов кириллицы не нужны.
+ignore = ["RUF001", "RUF002", "RUF003"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning"]

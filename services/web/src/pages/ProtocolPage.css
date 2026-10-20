@@ -1,0 +1,294 @@
+/* Протокол проверки: блоки и цвета как на дашборде (Card, плашки статусов, teal #12988C).
+   Цвета берутся из темы Ant Design через переменные --pr-*, которые задаёт компонент. */
+
+.pr-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.pr-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 24px;
+}
+
+.pr-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px 16px;
+  flex-wrap: wrap;
+}
+
+.pr-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* Сведения о проверке */
+.pr-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px 24px;
+  font-size: 14px;
+}
+
+.pr-facts b,
+.pr-details-grid b {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--pr-muted);
+  margin-bottom: 2px;
+}
+
+.pr-facts .pr-fill {
+  margin-left: 8px;
+  font-size: 13px;
+}
+
+.pr-facts code {
+  font-size: 12px;
+}
+
+/* Таблицы */
+.pr-code {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.pr-sub {
+  display: block;
+  color: var(--pr-muted);
+  font-size: 12px;
+}
+
+.pr-stage {
+  display: inline-block;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 1px 8px;
+  border-radius: 5px;
+}
+
+.pr-row-click {
+  cursor: pointer;
+}
+
+.pr-hint {
+  display: block;
+  margin-bottom: 12px;
+}
+
+/* Что нужно запросить */
+.pr-request {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px 20px;
+  flex-wrap: wrap;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--pr-border);
+}
+
+.pr-request:last-child {
+  border-bottom: 0;
+}
+
+.pr-request-text {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+/* Подпись */
+.pr-sign {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 48px;
+  align-items: flex-end;
+}
+
+.pr-sign-line {
+  min-width: 220px;
+  border-bottom: 1px solid var(--pr-muted);
+  height: 28px;
+}
+
+/* Карточка доказательства (Drawer) */
+.pr-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.pr-card-body h4 {
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.pr-card-body p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.pr-card-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.pr-values {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+}
+
+.pr-value-box {
+  border: 1px solid var(--pr-border);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+.pr-value-big {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.25;
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
+
+.pr-ev-stage {
+  display: inline-block;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 5px;
+}
+
+.pr-ev-stage-neutral {
+  background: #667085;
+}
+
+.pr-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  margin-top: 8px;
+  color: var(--pr-muted);
+  font-size: 13px;
+}
+
+.pr-source {
+  border: 1px solid var(--pr-border);
+  border-radius: 8px;
+  padding: 14px;
+  margin-bottom: 12px;
+}
+
+.pr-source-head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  font-size: 16px;
+}
+
+.pr-details-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px 24px;
+  font-size: 13px;
+}
+
+.pr-details-grid small {
+  display: block;
+  color: var(--pr-muted);
+  font-size: 12px;
+}
+
+.pr-empty-inline {
+  border: 1px dashed var(--pr-border);
+  border-radius: 8px;
+  padding: 14px;
+  color: var(--pr-muted);
+}
+
+@media print {
+  .pr-actions,
+  .pr-search-bar {
+    display: none;
+  }
+  .pr-root {
+    height: auto;
+  }
+  .pr-body {
+    overflow: visible;
+  }
+}
+
+/* Переход по счётчикам сводки не прячет заголовок секции под липкой панелью поиска */
+.pr-body [id^='pr-'] {
+  scroll-margin-top: 88px;
+}
+
+/* Плашка передачи во внешнюю ИС: тот же вид, что у полосы «Все несоответствия обработаны» в верификации */
+.pr-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-bottom: 24px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.pr-banner-note {
+  display: block;
+  margin-top: 2px;
+  font-weight: 400;
+}
+
+.pr-banner-success {
+  background: #D1FAE5;
+  color: #065F46;
+}
+
+.pr-banner-error {
+  background: #FEE2E2;
+  color: #991B1B;
+}
+
+.pr-banner-info {
+  background: #F1F5F9;
+  color: #334155;
+}
+
+body[data-theme='dark'] .pr-banner-success {
+  background: rgba(22, 163, 74, 0.18);
+  color: #86EFAC;
+}
+
+body[data-theme='dark'] .pr-banner-error {
+  background: rgba(239, 68, 68, 0.18);
+  color: #FCA5A5;
+}
+
+body[data-theme='dark'] .pr-banner-info {
+  background: rgba(148, 163, 184, 0.16);
+  color: #E4E6E9;
+}

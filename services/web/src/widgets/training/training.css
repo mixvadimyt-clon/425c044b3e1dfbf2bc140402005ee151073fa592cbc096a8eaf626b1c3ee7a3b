@@ -1,0 +1,214 @@
+/* Подсвеченное на текущем шаге помечается классами .training-target и .training-target-np: затемнение (Spotlight)
+   оставляет такие элементы светлыми. Своей рамки у них нет. */
+
+/* Место для сообщения «Урок пройден» между вкладками уроков и названием урока: пустое не занимает места */
+.training-done-slot:empty {
+  display: none;
+}
+
+.training-coach.training-coach-inline {
+  position: static;
+  width: auto;
+  z-index: auto;
+  box-shadow: none;
+  transition: none;
+}
+
+/* Подсказка шага: карточка летает рядом с тем, о чём говорит (CoachCard), стрелка показывает, на что смотреть */
+.training-coach {
+  position: fixed;
+  z-index: 2000;
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.22);
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 16px 20px;
+  border: 1px solid #12988C;
+  border-radius: 12px;
+  background: #E6F5F3;
+  transition: opacity 0.1s ease;
+}
+
+.training-coach-arrow {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  background: inherit;
+  border: 1px solid #12988C;
+  transform: rotate(45deg);
+}
+
+/* Стрелка торчит с того края карточки, который обращён к подсвеченному; --a: расстояние от угла вдоль края */
+.training-coach-arrow-left {
+  left: -8px;
+  top: calc(var(--a) - 7px);
+  border-right: 0;
+  border-top: 0;
+}
+
+.training-coach-arrow-right {
+  right: -8px;
+  top: calc(var(--a) - 7px);
+  border-left: 0;
+  border-bottom: 0;
+}
+
+.training-coach-arrow-top {
+  top: -8px;
+  left: calc(var(--a) - 7px);
+  border-right: 0;
+  border-bottom: 0;
+}
+
+.training-coach-arrow-bottom {
+  bottom: -8px;
+  left: calc(var(--a) - 7px);
+  border-left: 0;
+  border-top: 0;
+}
+
+/* Три панели документов делят центр поровну и не вылезают под правую колонку */
+.vw-container .compare-panels > .doc-panel {
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Подсвеченный элемент при прокрутке останавливается с небольшим отступом от края */
+[data-tt],
+.vw-container {
+  scroll-margin-top: 24px;
+}
+
+/* Точки состояния в шапке: у блока высота строки меньше содержимого, светлое окно получалось бы полоской */
+.training-target-np.training-target-np[data-tt='win-status'] {
+  display: inline-flex;
+  align-items: center;
+  height: auto;
+  line-height: 1.4;
+  padding: 4px 10px;
+}
+
+/* Ручки изменения размера плавающих панелей полного экрана: линия по краю и «ёлочка» в углу */
+.training-resize {
+  position: absolute;
+  z-index: 3;
+  touch-action: none;
+}
+
+.training-resize-side {
+  top: 0;
+  bottom: 14px;
+  width: 8px;
+  cursor: ew-resize;
+}
+
+.training-resize-right {
+  right: 0;
+}
+
+.training-resize-left {
+  left: 0;
+}
+
+.training-resize-bottom {
+  left: 14px;
+  right: 14px;
+  bottom: 0;
+  height: 8px;
+  cursor: ns-resize;
+}
+
+.training-resize-side::after,
+.training-resize-bottom::after {
+  content: '';
+  position: absolute;
+  background: #12988C;
+  opacity: 0.55;
+}
+
+.training-resize-right::after {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 3px;
+}
+
+.training-resize-left::after {
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 3px;
+}
+
+.training-resize-bottom::after {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+}
+
+.training-resize-corner {
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  opacity: 0.7;
+}
+
+.training-resize-corner-right {
+  right: 0;
+  cursor: nwse-resize;
+  background: repeating-linear-gradient(135deg, transparent 0, transparent 3px, #12988C 3px, #12988C 4px);
+}
+
+.training-resize-corner-left {
+  left: 0;
+  cursor: nesw-resize;
+  background: repeating-linear-gradient(45deg, transparent 0, transparent 3px, #12988C 3px, #12988C 4px);
+}
+
+.training-resize:hover::after,
+.training-resize-corner:hover {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .training-coach {
+    transition: none;
+  }
+}
+
+/* Заголовок и текст шага: номер и заголовок в одной строке, «Шаг N из M» справа, текст ниже на всю ширину */
+.training-coach-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.training-coach-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 20px;
+  line-height: 1.4;
+}
+
+.training-coach-count {
+  flex-shrink: 0;
+  font-size: 15px;
+}
+
+.training-coach-body {
+  font-size: 20px;
+  line-height: 1.6;
+}
+
+.training-coach-left .training-coach-title,
+.training-coach-right .training-coach-title,
+.training-coach-left .training-coach-body,
+.training-coach-right .training-coach-body {
+  font-size: 18px;
+}
+
+.training-coach .ant-btn {
+  font-size: 16px;
+}

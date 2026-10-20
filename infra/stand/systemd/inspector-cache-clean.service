@@ -1,0 +1,10 @@
+[Unit]
+Description=Продукт — еженедельная очистка кеша растров страниц
+Documentation=file://@INSTALL_DIR@/docs/guides/deploy.md
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=@INSTALL_DIR@
+ExecStart=@INSTALL_DIR@/scripts/stand-cache-clean.sh

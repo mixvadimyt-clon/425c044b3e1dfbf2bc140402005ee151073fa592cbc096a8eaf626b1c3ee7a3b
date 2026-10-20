@@ -1,0 +1,26 @@
+# Контекст сборки образов — корень репозитория (Dockerfile в services/api и infra/docker).
+# Не тащим в контекст данные, зависимости и артефакты: датасет — сотни мегабайт, var/ — локальная БД и файлы.
+.git
+.github
+**/node_modules
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+**/dist
+!contracts/dist
+**/*.log
+var
+dataset
+data/raw
+data/processed
+data/gold
+models
+ТЗ
+lct offline
+.env
+.env.*
+services/api/src/generated
+services/web/src/api/schema.d.ts
+services/ml/src/inspector_ml/contracts/*
+!services/ml/src/inspector_ml/contracts/__init__.py

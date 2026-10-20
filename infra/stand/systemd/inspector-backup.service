@@ -1,0 +1,10 @@
+[Unit]
+Description=Продукт — ночная копия базы стенда (ADR-0007)
+Documentation=file://@INSTALL_DIR@/docs/guides/deploy.md
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=@INSTALL_DIR@
+ExecStart=@INSTALL_DIR@/scripts/stand-backup.sh

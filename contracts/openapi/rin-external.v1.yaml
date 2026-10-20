@@ -1,0 +1,318 @@
+openapi: 3.0.3
+info:
+  title: ИАИС «РиН» — API внешней ИС для «Инспектора ИИ» (мок)
+  version: 0.1.0
+  description: |
+    Как «Инспектор ИИ» обменивается данными с внешней информационной системой надзора (в ТЗ — ИАИС «РиН»).
+    Настоящего API нет, поэтому это контракт нашей стороны: по нему работают мок-сервис `services/rin-mock` и коннекторы api
+    (`services/api/src/modules/integration/`). Название системы в сообщениях настраивается (`RIN_SYSTEM_NAME`).
+
+    Два направления:
+    - **документы → Инспектор** (REQ-INT-06): api периодически забирает новые пакеты (`GET /api/v1/packages`),
+      скачивает файлы и запускает проверку. Если протокол объекта финализирован, проверка не запускается —
+      инспектор получает уведомление и сам решает, создавать ли новую;
+    - **результаты → внешняя ИС** (REQ-INT-01…05): после финализации api отправляет подтверждённые нарушения,
+      версии протокола, матрицы и модели и реестр входных файлов (`POST /api/v1/results`). На 5xx и таймаут —
+      три повтора через 1, 5 и 15 минут; пока не доставлено — `sync_status = PENDING_SYNC`.
+
+    Аутентификация (REQ-INT-02): в проде — клиентский сертификат (УКЭП) и подпись запроса. В моке —
+    bearer-токен и заголовок `x-signature` = HMAC-SHA256 тела запроса общим секретом (hex).
+  license:
+    name: Proprietary
+    url: https://github.com/mixvadimyt-clon/425c044b3e1dfbf2bc140402005ee151073fa592cbc096a8eaf626b1c3ee7a3b
+servers:
+  - url: http://localhost:4020
+    description: services/rin-mock (dev)
+security:
+  - bearerAuth: []
+tags:
+  - name: packages
+    description: Пакеты документов для проверки (внешняя ИС → Инспектор)
+  - name: results
+    description: Результаты проверок (Инспектор → внешняя ИС)
+  - name: system
+    description: Служебные эндпоинты
+
+paths:
+  /health:
+    get:
+      tags: [system]
+      operationId: rinHealth
+      summary: Живость внешней ИС
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+                  system:
+                    type: string
+                    example: ИАИС «РиН» (мок)
+
+  /api/v1/packages:
+    get:
+      tags: [packages]
+      operationId: listPackages
+      summary: Пакеты документов, готовые к проверке
+      description: |
+        Все пакеты или только появившиеся после `since`. Инспектор помнит обработанные `package_id`,
+        поэтому повторная выдача пакета безопасна.
+      parameters:
+        - name: since
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PackageList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/packages/{package_id}/files/{file_index}:
+    get:
+      tags: [packages]
+      operationId: downloadPackageFile
+      summary: Содержимое файла пакета
+      parameters:
+        - name: package_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: file_index
+          in: path
+          required: true
+          description: Номер файла в пакете (с 0, как в `Package.files`); реестр — `registry`
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Файл как есть
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Нет такого пакета или файла
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RinError'
+
+  /api/v1/results:
+    post:
+      tags: [results]
+      operationId: receiveInspectionResult
+      summary: Принять результат проверки (REQ-INT-01…05)
+      description: |
+        Идемпотентно по `x-idempotency-key` (у Инспектора — `<process_id>:v<версия протокола>`):
+        повтор с тем же ключом возвращает ту же квитанцию с `duplicate = true` и кодом 200.
+        Если есть подтверждённые нарушения, внешняя ИС регистрирует предписание в статусе `ISSUED` (REQ-INT-07).
+      parameters:
+        - name: x-idempotency-key
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: x-signature
+          in: header
+          required: false
+          description: HMAC-SHA256 тела запроса общим секретом, hex (мок подписи УКЭП, REQ-INT-02)
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './inspector-api.v1.yaml#/components/schemas/InspectionResult'
+      responses:
+        '200':
+          description: Уже принят ранее (тот же ключ идемпотентности)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultReceipt'
+        '201':
+          description: Принят
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultReceipt'
+        '400':
+          description: Тело не соответствует контракту или неверная подпись
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RinError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          description: Внешняя ИС недоступна — Инспектор повторит отправку
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RinError'
+    get:
+      tags: [results]
+      operationId: listReceivedResults
+      summary: Принятые результаты (для проверки обмена и демо)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ResultReceipt'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Токен, выданный Инспектору внешней ИС (в проде — клиентский сертификат УКЭП)
+
+  responses:
+    Unauthorized:
+      description: Нет или неверный токен
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/RinError'
+
+  schemas:
+    RinError:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          example: UNAVAILABLE
+        message:
+          type: string
+
+    ExternalObject:
+      type: object
+      description: Объект капитального строительства во внешней ИС
+      required: [object_id, name]
+      properties:
+        object_id:
+          type: string
+          description: Идентификатор объекта во внешней ИС — у Инспектора это `ObjectInfo.external_id`
+          example: ALT79B
+        name:
+          type: string
+        address:
+          type: string
+          nullable: true
+        customer:
+          type: string
+          nullable: true
+        contractor:
+          type: string
+          nullable: true
+        permit_number:
+          type: string
+          nullable: true
+
+    PackageFile:
+      type: object
+      required: [name, rel_path, size_bytes, sha256, url]
+      properties:
+        name:
+          type: string
+        rel_path:
+          type: string
+          description: Путь внутри пакета через «/» — по нему файл сопоставляется со строкой реестра
+        size_bytes:
+          type: integer
+        sha256:
+          type: string
+          description: Инспектор сверяет с полученным содержимым; расхождение — пакет не принимается
+        url:
+          type: string
+          description: Путь для скачивания относительно базового URL внешней ИС
+
+    Package:
+      type: object
+      required: [package_id, created_at, object, files]
+      properties:
+        package_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        title:
+          type: string
+          nullable: true
+        object:
+          $ref: '#/components/schemas/ExternalObject'
+        registry:
+          description: Реестр файлов комплекта (CSV / XLSX / JSON / JSONL, «Перечень ИД» ред. 1.1); без него полнота — CLARIFICATION_REQUIRED
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/PackageFile'
+          nullable: true
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/PackageFile'
+
+    PackageList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Package'
+
+    ResultReceipt:
+      type: object
+      required: [receipt_id, received_at, process_id, protocol_version, duplicate]
+      properties:
+        receipt_id:
+          type: string
+        received_at:
+          type: string
+          format: date-time
+        process_id:
+          type: string
+          format: uuid
+        protocol_version:
+          type: integer
+        confirmed_violations:
+          type: integer
+        duplicate:
+          type: boolean
+          description: Результат с этим ключом идемпотентности уже был принят
+        prescription:
+          type: object
+          nullable: true
+          description: Предписание, заведённое по подтверждённым нарушениям (REQ-INT-07)
+          required: [prescription_id, status]
+          properties:
+            prescription_id:
+              type: string
+            status:
+              $ref: './inspector-api.v1.yaml#/components/schemas/PrescriptionStatus'

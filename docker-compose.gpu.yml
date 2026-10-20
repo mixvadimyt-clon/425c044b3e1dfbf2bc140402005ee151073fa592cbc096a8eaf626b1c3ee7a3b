@@ -1,0 +1,71 @@
+# Надстройка для GPU (стенд проверки: H100 80 ГБ): ML-образ с CUDA
+# и paddlepaddle-gpu, распознавание без бюджета страниц.
+#   ./start.sh --gpu
+#   docker compose -f docker-compose.app.yml -f docker-compose.gpu.yml --env-file .env.stand up -d --build
+# Нужен NVIDIA Container Toolkit на хосте: драйвер в образ не кладём, CUDA внутри (ADR-0007).
+services:
+  ml:
+    build: { context: ., dockerfile: infra/docker/ml-gpu.Dockerfile, args: { EXTRAS: "${ML_EXTRAS:-ocr embeddings}" } }
+    image: inspector-ml-gpu
+    environment:
+      OCR_DEVICE: ${OCR_DEVICE:-auto}
+      # На GPU страница распознаётся около секунды — потолок страниц здесь только портит качество
+      OCR_MAX_PAGES: ${OCR_MAX_PAGES:-0}
+      ML_WORKERS: ${ML_WORKERS:-4}
+      # Графический поиск без лимита пар (просьба экспертов 16.10): все пары листов-чертежей.
+      # Листов на стадию — 150: растры держатся в памяти до конца сравнения. Время — аварийный предел.
+      VISUAL_MAX_SHEETS: ${VISUAL_MAX_SHEETS:-150}
+      VISUAL_MAX_PAIR_CHECKS: ${VISUAL_MAX_PAIR_CHECKS:-0}
+      VISUAL_BUDGET_S: ${VISUAL_BUDGET_S:-1200}
+      # Подписи систем вентиляции на планах РД шрифтом САПР (IOS4-078/079) читает OCR: на карте 12 планов
+      # «Тюменской 5» — около 155 с (RTX 3050). На процессорном стенде OCR выключен, там берётся готовый кеш.
+      CAD_OCR_ENABLED: ${CAD_OCR_ENABLED:-true}
+      CAD_OCR_BUDGET_S: ${CAD_OCR_BUDGET_S:-300}
+      # Организаторы допускают проверку нескольких команд на одном GPU, поэтому
+      # берём не «сколько есть», а фиксированный предел. Распознаванию столько не нужно и близко:
+      # замер на живой карте — пик 69 МБ под тензоры, работает даже при пределе 512 МБ.
+      # 20 ГБ здесь — бюджет под языковую модель; окончательное значение за ней, когда выберет
+      # модель и квантизацию. 0 — без предела, для монопольной карты.
+      FLAGS_allocator_strategy: auto_growth
+      FLAGS_gpu_memory_limit_mb: ${GPU_MEMORY_LIMIT_MB:-20480}
+      # Свободный поиск локальной моделью (ADR-0008). Включает `./start.sh --gpu --llm`: он же поднимает
+      # сервис llm ниже. Без флага модели нет, гипотез SEMANTIC_DISSONANCE тоже — остальное работает как раньше.
+      LLM_ENABLED: ${LLM_ENABLED:-false}
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://llm:11434/v1}
+      LLM_MODEL: ${LLM_MODEL:-qwen3:8b}
+      # С рассуждением Qwen3 пишет до 6000 токенов, а запросы воркеров (ML_WORKERS=4) при двух местах в Ollama
+      # ждут друг друга в очереди: умолчание клиента 90 с впритык даже на H100
+      LLM_TIMEOUT_S: ${LLM_TIMEOUT_S:-240}
+    networks: [default, llm]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # Qwen3 8B в Ollama, веса внутри образа (infra/docker/llm.Dockerfile). Только в профиле llm: без `--llm` не
+  # собирается и не запускается. Видеопамять — около 8,5 ГБ (веса q4_K_M 5,2 ГБ и кеш окна 20k × 2 запроса), вместе с пределом
+  # распознавания 20 ГБ это меньше половины H100 даже при общей карте.
+  llm:
+    # якорь x-restart живёт в docker-compose.app.yml и сюда не виден — те же значения явно
+    restart: unless-stopped
+    logging: { driver: json-file, options: { max-size: "50m", max-file: "3" } }
+    profiles: [llm]
+    build: { context: ., dockerfile: infra/docker/llm.Dockerfile, args: { LLM_MODEL: "${LLM_MODEL:-qwen3:8b}" } }
+    image: inspector-llm
+    # Только внутренняя сеть: из контейнера модели нет выхода в интернет, и порт наружу не публикуется
+    networks: [llm]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+networks:
+  # internal — Docker не даёт этой сети маршрута наружу: модель отвечает только ML
+  llm:
+    internal: true

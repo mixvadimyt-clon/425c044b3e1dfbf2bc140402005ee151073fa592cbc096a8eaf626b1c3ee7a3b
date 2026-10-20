@@ -1,0 +1,30 @@
+# Алерты REQ-MON-07. Пороговые значения — из ТЗ. Доставка (e-mail/Telegram) — Alertmanager.
+groups:
+  - name: inspector
+    rules:
+      - alert: HighCpu
+        expr: sum by (name) (rate(container_cpu_usage_seconds_total{name!=""}[5m])) > 0.8
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "CPU > 80% в контейнере {{ $labels.name }}" }
+      - alert: SlowApi
+        expr: histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{job="api"}[5m]))) > 0.5
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "p95 времени ответа API > 500 мс" }
+      - alert: Api5xx
+        expr: sum(rate(http_requests_total{job="api",status_code=~"5.."}[5m])) > 0
+        for: 5m
+        labels: { severity: critical }
+        annotations: { summary: "API отдаёт 5xx" }
+      - alert: LoginBruteForce
+        # 429 на входе — кто-то упёрся в лимит неудачных попыток (auth/throttle.ts)
+        expr: sum(rate(http_requests_total{job="api",route="/api/v1/auth/login",status_code="429"}[5m])) > 0
+        for: 1m
+        labels: { severity: warning }
+        annotations: { summary: "Подбор пароля: вход закрыт по лимиту неудачных попыток" }
+      - alert: QueueBacklog
+        expr: rabbitmq_queue_messages_ready > 100
+        for: 10m
+        labels: { severity: warning }
+        annotations: { summary: "Очередь RabbitMQ растёт" }

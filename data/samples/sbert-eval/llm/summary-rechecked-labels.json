@@ -1,0 +1,622 @@
+{
+ "metrics": {
+  "heldout/rules/None": {
+   "TP": 154,
+   "FP": 44,
+   "FN": 62,
+   "precision": 0.7778,
+   "recall": 0.6638,
+   "f1": 0.7163,
+   "ci": [
+    0.6635,
+    0.7643
+   ]
+  },
+  "heldout/sbert/None": {
+   "TP": 173,
+   "FP": 86,
+   "FN": 41,
+   "precision": 0.668,
+   "recall": 0.7457,
+   "f1": 0.7047,
+   "ci": [
+    0.6538,
+    0.75
+   ]
+  },
+  "heldout/filters/None": {
+   "TP": 172,
+   "FP": 56,
+   "FN": 42,
+   "precision": 0.7544,
+   "recall": 0.7414,
+   "f1": 0.7478,
+   "ci": [
+    0.6992,
+    0.7885
+   ]
+  },
+  "heldout/llm_sbert/qwen/qwen3-235b-a22b-2507": {
+   "TP": 175,
+   "FP": 48,
+   "FN": 39,
+   "precision": 0.7848,
+   "recall": 0.7543,
+   "f1": 0.7692,
+   "ci": [
+    0.7216,
+    0.809
+   ]
+  },
+  "heldout/llm_sbert/qwen/qwen3-30b-a3b-instruct-2507": {
+   "TP": 175,
+   "FP": 49,
+   "FN": 39,
+   "precision": 0.7812,
+   "recall": 0.7543,
+   "f1": 0.7675,
+   "ci": [
+    0.7198,
+    0.8065
+   ]
+  },
+  "heldout/llm_sbert/qwen/qwen3.5-9b": {
+   "TP": 174,
+   "FP": 48,
+   "FN": 40,
+   "precision": 0.7838,
+   "recall": 0.75,
+   "f1": 0.7665,
+   "ci": [
+    0.7188,
+    0.8072
+   ]
+  },
+  "heldout/llm_sbert/qwen/qwen3-8b": {
+   "TP": 175,
+   "FP": 53,
+   "FN": 39,
+   "precision": 0.7675,
+   "recall": 0.7543,
+   "f1": 0.7609,
+   "ci": [
+    0.713,
+    0.8008
+   ]
+  },
+  "heldout/filters_llm_sbert/qwen/qwen3-235b-a22b-2507": {
+   "TP": 172,
+   "FP": 46,
+   "FN": 42,
+   "precision": 0.789,
+   "recall": 0.7414,
+   "f1": 0.7644,
+   "ci": [
+    0.7158,
+    0.8056
+   ]
+  },
+  "heldout/filters_llm_sbert/qwen/qwen3-30b-a3b-instruct-2507": {
+   "TP": 172,
+   "FP": 46,
+   "FN": 42,
+   "precision": 0.789,
+   "recall": 0.7414,
+   "f1": 0.7644,
+   "ci": [
+    0.7158,
+    0.8056
+   ]
+  },
+  "heldout/filters_llm_sbert/qwen/qwen3.5-9b": {
+   "TP": 171,
+   "FP": 46,
+   "FN": 43,
+   "precision": 0.788,
+   "recall": 0.7371,
+   "f1": 0.7617,
+   "ci": [
+    0.7119,
+    0.803
+   ]
+  },
+  "heldout/filters_llm_sbert/qwen/qwen3-8b": {
+   "TP": 172,
+   "FP": 49,
+   "FN": 42,
+   "precision": 0.7783,
+   "recall": 0.7414,
+   "f1": 0.7594,
+   "ci": [
+    0.7124,
+    0.8008
+   ]
+  },
+  "heldout/rules_llm/qwen/qwen3-235b-a22b-2507": {
+   "TP": 157,
+   "FP": 5,
+   "FN": 72,
+   "precision": 0.9691,
+   "recall": 0.6767,
+   "f1": 0.797,
+   "ci": [
+    0.7449,
+    0.8443
+   ]
+  },
+  "heldout/rules_llm/qwen/qwen3-30b-a3b-instruct-2507": {
+   "TP": 160,
+   "FP": 8,
+   "FN": 65,
+   "precision": 0.9524,
+   "recall": 0.6897,
+   "f1": 0.8,
+   "ci": [
+    0.7441,
+    0.8486
+   ]
+  },
+  "heldout/rules_llm/qwen/qwen3.5-9b": {
+   "TP": 151,
+   "FP": 6,
+   "FN": 78,
+   "precision": 0.9618,
+   "recall": 0.6481,
+   "f1": 0.7744,
+   "ci": [
+    0.7166,
+    0.8286
+   ]
+  },
+  "heldout/rules_llm/qwen/qwen3-8b": {
+   "TP": 148,
+   "FP": 31,
+   "FN": 70,
+   "precision": 0.8268,
+   "recall": 0.6379,
+   "f1": 0.7202,
+   "ci": [
+    0.6651,
+    0.7692
+   ]
+  },
+  "heldout/llm_all/qwen/qwen3-235b-a22b-2507": {
+   "TP": 179,
+   "FP": 9,
+   "FN": 48,
+   "precision": 0.9521,
+   "recall": 0.7716,
+   "f1": 0.8524,
+   "ci": [
+    0.807,
+    0.8898
+   ]
+  },
+  "heldout/llm_all/qwen/qwen3-30b-a3b-instruct-2507": {
+   "TP": 182,
+   "FP": 13,
+   "FN": 41,
+   "precision": 0.9333,
+   "recall": 0.7845,
+   "f1": 0.8525,
+   "ci": [
+    0.8036,
+    0.8934
+   ]
+  },
+  "heldout/llm_all/qwen/qwen3.5-9b": {
+   "TP": 172,
+   "FP": 12,
+   "FN": 53,
+   "precision": 0.9348,
+   "recall": 0.7382,
+   "f1": 0.8249,
+   "ci": [
+    0.7737,
+    0.8667
+   ]
+  },
+  "heldout/llm_all/qwen/qwen3-8b": {
+   "TP": 170,
+   "FP": 40,
+   "FN": 46,
+   "precision": 0.8095,
+   "recall": 0.7328,
+   "f1": 0.7692,
+   "ci": [
+    0.7179,
+    0.8127
+   ]
+  },
+  "heldout/filters_llm_all/qwen/qwen3-235b-a22b-2507": {
+   "TP": 176,
+   "FP": 7,
+   "FN": 51,
+   "precision": 0.9617,
+   "recall": 0.7586,
+   "f1": 0.8482,
+   "ci": [
+    0.802,
+    0.8889
+   ]
+  },
+  "heldout/filters_llm_all/qwen/qwen3-30b-a3b-instruct-2507": {
+   "TP": 179,
+   "FP": 10,
+   "FN": 44,
+   "precision": 0.9471,
+   "recall": 0.7716,
+   "f1": 0.8504,
+   "ci": [
+    0.799,
+    0.8932
+   ]
+  },
+  "heldout/filters_llm_all/qwen/qwen3.5-9b": {
+   "TP": 169,
+   "FP": 10,
+   "FN": 56,
+   "precision": 0.9441,
+   "recall": 0.7253,
+   "f1": 0.8204,
+   "ci": [
+    0.7652,
+    0.8671
+   ]
+  },
+  "heldout/filters_llm_all/qwen/qwen3-8b": {
+   "TP": 167,
+   "FP": 36,
+   "FN": 49,
+   "precision": 0.8227,
+   "recall": 0.7198,
+   "f1": 0.7678,
+   "ci": [
+    0.7139,
+    0.8106
+   ]
+  },
+  "train/rules/None": {
+   "TP": 97,
+   "FP": 30,
+   "FN": 88,
+   "precision": 0.7638,
+   "recall": 0.5052,
+   "f1": 0.6082,
+   "ci": [
+    0.5333,
+    0.6751
+   ]
+  },
+  "train/sbert/None": {
+   "TP": 128,
+   "FP": 63,
+   "FN": 53,
+   "precision": 0.6702,
+   "recall": 0.6737,
+   "f1": 0.6719,
+   "ci": [
+    0.6186,
+    0.7193
+   ]
+  },
+  "train/filters/None": {
+   "TP": 128,
+   "FP": 54,
+   "FN": 54,
+   "precision": 0.7033,
+   "recall": 0.6737,
+   "f1": 0.6882,
+   "ci": [
+    0.6351,
+    0.7362
+   ]
+  },
+  "train/llm_sbert/qwen/qwen3-235b-a22b-2507": {
+   "TP": 128,
+   "FP": 35,
+   "FN": 55,
+   "precision": 0.7853,
+   "recall": 0.6737,
+   "f1": 0.7252,
+   "ci": [
+    0.6735,
+    0.7703
+   ]
+  },
+  "train/llm_sbert/qwen/qwen3-30b-a3b-instruct-2507": {
+   "TP": 128,
+   "FP": 36,
+   "FN": 55,
+   "precision": 0.7805,
+   "recall": 0.6737,
+   "f1": 0.7232,
+   "ci": [
+    0.6734,
+    0.7673
+   ]
+  },
+  "train/llm_sbert/qwen/qwen3.5-9b": {
+   "TP": 128,
+   "FP": 33,
+   "FN": 55,
+   "precision": 0.795,
+   "recall": 0.6737,
+   "f1": 0.7293,
+   "ci": [
+    0.6788,
+    0.7735
+   ]
+  },
+  "train/llm_sbert/qwen/qwen3-8b": {
+   "TP": 129,
+   "FP": 38,
+   "FN": 55,
+   "precision": 0.7725,
+   "recall": 0.6754,
+   "f1": 0.7207,
+   "ci": [
+    0.6692,
+    0.7666
+   ]
+  },
+  "train/filters_llm_sbert/qwen/qwen3-235b-a22b-2507": {
+   "TP": 128,
+   "FP": 31,
+   "FN": 55,
+   "precision": 0.805,
+   "recall": 0.6737,
+   "f1": 0.7335,
+   "ci": [
+    0.6807,
+    0.7799
+   ]
+  },
+  "train/filters_llm_sbert/qwen/qwen3-30b-a3b-instruct-2507": {
+   "TP": 128,
+   "FP": 31,
+   "FN": 55,
+   "precision": 0.805,
+   "recall": 0.6737,
+   "f1": 0.7335,
+   "ci": [
+    0.6807,
+    0.7799
+   ]
+  },
+  "train/filters_llm_sbert/qwen/qwen3.5-9b": {
+   "TP": 128,
+   "FP": 31,
+   "FN": 55,
+   "precision": 0.805,
+   "recall": 0.6737,
+   "f1": 0.7335,
+   "ci": [
+    0.6807,
+    0.7799
+   ]
+  },
+  "train/filters_llm_sbert/qwen/qwen3-8b": {
+   "TP": 129,
+   "FP": 33,
+   "FN": 55,
+   "precision": 0.7963,
+   "recall": 0.6754,
+   "f1": 0.7309,
+   "ci": [
+    0.6786,
+    0.7763
+   ]
+  },
+  "train/rules_llm/qwen/qwen3-235b-a22b-2507": {
+   "TP": 96,
+   "FP": 21,
+   "FN": 95,
+   "precision": 0.8205,
+   "recall": 0.5,
+   "f1": 0.6214,
+   "ci": [
+    0.5448,
+    0.689
+   ]
+  },
+  "train/rules_llm/qwen/qwen3-30b-a3b-instruct-2507": {
+   "TP": 97,
+   "FP": 22,
+   "FN": 93,
+   "precision": 0.8151,
+   "recall": 0.5052,
+   "f1": 0.6238,
+   "ci": [
+    0.5479,
+    0.6911
+   ]
+  },
+  "train/rules_llm/qwen/qwen3.5-9b": {
+   "TP": 86,
+   "FP": 20,
+   "FN": 105,
+   "precision": 0.8113,
+   "recall": 0.4479,
+   "f1": 0.5772,
+   "ci": [
+    0.4983,
+    0.6491
+   ]
+  },
+  "train/rules_llm/qwen/qwen3-8b": {
+   "TP": 93,
+   "FP": 27,
+   "FN": 94,
+   "precision": 0.775,
+   "recall": 0.4844,
+   "f1": 0.5962,
+   "ci": [
+    0.5202,
+    0.6645
+   ]
+  },
+  "train/llm_all/qwen/qwen3-235b-a22b-2507": {
+   "TP": 128,
+   "FP": 26,
+   "FN": 61,
+   "precision": 0.8312,
+   "recall": 0.6737,
+   "f1": 0.7442,
+   "ci": [
+    0.6906,
+    0.7903
+   ]
+  },
+  "train/llm_all/qwen/qwen3-30b-a3b-instruct-2507": {
+   "TP": 129,
+   "FP": 28,
+   "FN": 59,
+   "precision": 0.8217,
+   "recall": 0.6789,
+   "f1": 0.7435,
+   "ci": [
+    0.6923,
+    0.7877
+   ]
+  },
+  "train/llm_all/qwen/qwen3.5-9b": {
+   "TP": 118,
+   "FP": 23,
+   "FN": 70,
+   "precision": 0.8369,
+   "recall": 0.6243,
+   "f1": 0.7152,
+   "ci": [
+    0.6576,
+    0.7642
+   ]
+  },
+  "train/llm_all/qwen/qwen3-8b": {
+   "TP": 126,
+   "FP": 35,
+   "FN": 60,
+   "precision": 0.7826,
+   "recall": 0.6597,
+   "f1": 0.7159,
+   "ci": [
+    0.6643,
+    0.7625
+   ]
+  },
+  "train/filters_llm_all/qwen/qwen3-235b-a22b-2507": {
+   "TP": 127,
+   "FP": 22,
+   "FN": 61,
+   "precision": 0.8523,
+   "recall": 0.672,
+   "f1": 0.7515,
+   "ci": [
+    0.6925,
+    0.8
+   ]
+  },
+  "train/filters_llm_all/qwen/qwen3-30b-a3b-instruct-2507": {
+   "TP": 128,
+   "FP": 23,
+   "FN": 60,
+   "precision": 0.8477,
+   "recall": 0.6737,
+   "f1": 0.7507,
+   "ci": [
+    0.6962,
+    0.7966
+   ]
+  },
+  "train/filters_llm_all/qwen/qwen3.5-9b": {
+   "TP": 118,
+   "FP": 21,
+   "FN": 70,
+   "precision": 0.8489,
+   "recall": 0.6243,
+   "f1": 0.7195,
+   "ci": [
+    0.6622,
+    0.7688
+   ]
+  },
+  "train/filters_llm_all/qwen/qwen3-8b": {
+   "TP": 125,
+   "FP": 30,
+   "FN": 60,
+   "precision": 0.8065,
+   "recall": 0.6579,
+   "f1": 0.7246,
+   "ci": [
+    0.6692,
+    0.772
+   ]
+  }
+ },
+ "agreement": {
+  "heldout/Qwen3-235B-A22B/P": {
+   "wrong_cut": 0.895,
+   "right_lost": 0.029
+  },
+  "heldout/Qwen3-235B-A22B/S": {
+   "wrong_cut": 0.857,
+   "right_lost": 0.0
+  },
+  "heldout/Qwen3-30B-A3B/P": {
+   "wrong_cut": 0.763,
+   "right_lost": 0.0
+  },
+  "heldout/Qwen3-30B-A3B/S": {
+   "wrong_cut": 0.786,
+   "right_lost": 0.0
+  },
+  "heldout/Qwen3.5-9B/P": {
+   "wrong_cut": 0.842,
+   "right_lost": 0.077
+  },
+  "heldout/Qwen3.5-9B/S": {
+   "wrong_cut": 0.821,
+   "right_lost": 0.029
+  },
+  "heldout/Qwen3-8B/P": {
+   "wrong_cut": 0.5,
+   "right_lost": 0.048
+  },
+  "heldout/Qwen3-8B/S": {
+   "wrong_cut": 0.607,
+   "right_lost": 0.0
+  },
+  "train/Qwen3-235B-A22B/P": {
+   "wrong_cut": 0.417,
+   "right_lost": 0.041
+  },
+  "train/Qwen3-235B-A22B/S": {
+   "wrong_cut": 0.738,
+   "right_lost": 0.03
+  },
+  "train/Qwen3-30B-A3B/P": {
+   "wrong_cut": 0.417,
+   "right_lost": 0.041
+  },
+  "train/Qwen3-30B-A3B/S": {
+   "wrong_cut": 0.69,
+   "right_lost": 0.0
+  },
+  "train/Qwen3.5-9B/P": {
+   "wrong_cut": 0.5,
+   "right_lost": 0.173
+  },
+  "train/Qwen3.5-9B/S": {
+   "wrong_cut": 0.81,
+   "right_lost": 0.061
+  },
+  "train/Qwen3-8B/P": {
+   "wrong_cut": 0.25,
+   "right_lost": 0.143
+  },
+  "train/Qwen3-8B/S": {
+   "wrong_cut": 0.571,
+   "right_lost": 0.0
+  }
+ }
+}

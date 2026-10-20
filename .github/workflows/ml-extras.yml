@@ -1,0 +1,21 @@
+name: ML extras
+
+# Полная установка ML (PaddleOCR, Docling, Sentence-BERT, LLM-клиент): несколько ГБ, поэтому не на каждый PR,
+# а вручную (Actions → ML extras → Run workflow) и раз в неделю — чтобы вовремя заметить конфликт зависимостей.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * 1'
+
+jobs:
+  ml-extras:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: services/ml } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with: { enable-cache: true }
+      - run: uv sync --all-extras --dev
+      - run: uv run gen
+      - run: uv run inspector-ml info
+      - run: uv run pytest -q
